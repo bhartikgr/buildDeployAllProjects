@@ -75,8 +75,8 @@ async function generateAccessToken() {
             brand_name: "YourApp",
             landing_page: "LOGIN",
             user_action: "PAY_NOW",
-            return_url: `https://communitysponsoradmin.com/backend/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
-  cancel_url: `https://communitysponsoradmin.com/backend/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
+            return_url: `https://communitysponsoradmin.com/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
+  cancel_url: `https://communitysponsoradmin.com/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
           },
         },
         { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }

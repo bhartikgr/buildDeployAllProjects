@@ -146,7 +146,7 @@ exports.createCustomiseRoster = (req, res) => {
                         }
                       );
 
-                      const msg = `Created a new ${data.type} roster starting from ${startDatee} until ${endDatee}.`;
+                      const msg = `Created a new ${data.roster_type} roster starting from ${startDatee} until ${endDatee}.`;
                       let notifications = {
                         user_id: data.user_id,
                         message: msg,

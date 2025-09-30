@@ -4550,14 +4550,19 @@ async function weeklydates(
 
   try {
     const results = await queryAsync(
-      "SELECT rosters.*,attendance.date,attendance.id as attend_id from rosters join attendance on attendance.roster_id = rosters.id where rosters.month_end_date > ? And attendance.date BETWEEN ? AND ? And rosters.user_id=? And (attendance.shift !=? And attendance.Shift !=?) limit 1",
-      [formattedDate, start, end, userid, "Edit", "Add"]
+      "SELECT rosters.*,attendance.date,attendance.id as attend_id from rosters join attendance on attendance.roster_id = rosters.id where rosters.month_end_date > ? And attendance.date BETWEEN ? AND ? And rosters.user_id=? And (attendance.shift !=? And attendance.Shift !=?) And rosters.id = ? And rosters.client_id = ? And rosters.location_id = ? limit 1",
+      [
+        formattedDate,
+        start,
+        end,
+        userid,
+        "Edit",
+        "Add",
+        alldata.roster_id,
+        alldata.client_id,
+        alldata.location_id,
+      ]
     );
-    //console.log(results.length);
-    //console.log(formattedDate);
-    //console.log(start);
-    //console.log(end);
-    //console.log(userid);
     if (results.length === 0) {
       // If no results are found, set status to 2
       const status = "2";

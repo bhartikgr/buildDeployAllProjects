@@ -429,13 +429,14 @@ exports.sponsorfilter = (req, res) => {
   });
 };
 
-
 exports.createstripe = async (req, res) => {
   try {
     const { stripeemail, userId } = req.body;
 
     if (!stripeemail || !userId) {
-      return res.status(400).json({ error: "Stripe email and userId are required" });
+      return res
+        .status(400)
+        .json({ error: "Stripe email and userId are required" });
     }
 
     // 1. Create Stripe account
@@ -461,16 +462,14 @@ exports.createstripe = async (req, res) => {
       // 3. Create onboarding link
       const accountLink = await stripe.accountLinks.create({
         account: account.id,
-        refresh_url: "https://communitysponsoradmin.com/backend/payoutsettings",
-        return_url: "https://communitysponsoradmin.com/backend/payoutsettings",
+        refresh_url: "https://communitysponsor.org/backend/payoutsettings",
+        return_url: "https://communitysponsor.org/backend/payoutsettings",
         type: "account_onboarding",
       });
 
       // 4. Send onboarding link back
       res.json({ accountLink: accountLink.url });
-      
     });
-
   } catch (error) {
     console.error("Stripe error:", error);
     res.status(500).json({ error: error.message });

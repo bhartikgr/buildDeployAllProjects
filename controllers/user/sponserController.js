@@ -332,7 +332,7 @@ exports.proposalData = async (req, res) => {
     status,
     JSON.stringify(images),
     JSON.stringify(video_links),
-      location,
+    location,
     spnotes,
     numfamily,
     highlight,
@@ -829,7 +829,9 @@ const generateEmailBody = (proposal, customMessage, host, url) => {
         </div>
         
         <div style="padding: 24px; background: white;">
-          <h2 style="color: #1f2937; margin-bottom: 16px;">${proposal.title}</h2>
+          <h2 style="color: #1f2937; margin-bottom: 16px;">${
+            proposal.title
+          }</h2>
           
           ${
             customMessage
@@ -848,10 +850,22 @@ const generateEmailBody = (proposal, customMessage, host, url) => {
           
           <div style="margin-bottom: 24px;">
             <h3 style="color: #374151; margin-bottom: 12px;">Event Details</h3>
-            <p style="margin: 4px 0; color: #4b5563;"><strong>Event:</strong> ${proposal.title}</p>
-            <p style="margin: 4px 0; color: #4b5563;"><strong>Description:</strong> ${proposal.description}</p>
-            ${proposal.event_reach ? `<p style="margin: 4px 0; color: #4b5563;"><strong>Expected Reach:</strong> ${proposal.event_reach}</p>` : ""}
-            ${proposal.audience_demographics ? `<p style="margin: 4px 0; color: #4b5563;"><strong>Audience:</strong> ${proposal.audience_demographics}</p>` : ""}
+            <p style="margin: 4px 0; color: #4b5563;"><strong>Event:</strong> ${
+              proposal.title
+            }</p>
+            <p style="margin: 4px 0; color: #4b5563;"><strong>Description:</strong> ${
+              proposal.description
+            }</p>
+            ${
+              proposal.event_reach
+                ? `<p style="margin: 4px 0; color: #4b5563;"><strong>Expected Reach:</strong> ${proposal.event_reach}</p>`
+                : ""
+            }
+            ${
+              proposal.audience_demographics
+                ? `<p style="margin: 4px 0; color: #4b5563;"><strong>Audience:</strong> ${proposal.audience_demographics}</p>`
+                : ""
+            }
           </div>
 
           ${
@@ -866,9 +880,13 @@ const generateEmailBody = (proposal, customMessage, host, url) => {
           <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <h4 style="margin: 0; color: #1f2937;">${tier.name}</h4>
-              <span style="font-size: 20px; font-weight: bold; color: #10b981;">$${Number(tier.amount).toLocaleString()}</span>
+              <span style="font-size: 20px; font-weight: bold; color: #10b981;">$${Number(
+                tier.amount
+              ).toLocaleString()}</span>
             </div>
-            <p style="margin: 8px 0; color: #6b7280; font-size: 14px;">${tier.description}</p>
+            <p style="margin: 8px 0; color: #6b7280; font-size: 14px;">${
+              tier.description
+            }</p>
             <div style="margin-top: 8px;">
               ${tier.benefits
                 .map(
@@ -902,7 +920,11 @@ const generateEmailBody = (proposal, customMessage, host, url) => {
           <p style="margin: 0 0 8px 0;"><strong>Contact Information:</strong></p>
           <p style="margin: 2px 0;">${host.full_name} - ${host.company_name}</p>
           <p style="margin: 2px 0;">Email: ${host.email}</p>
-          ${host.phone ? `<p style="margin: 2px 0;">Phone: ${host.phone}</p>` : ""}
+          ${
+            host.phone
+              ? `<p style="margin: 2px 0;">Phone: ${host.phone}</p>`
+              : ""
+          }
           
           <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
             <p style="margin: 0;">You're receiving this because you opted into sponsor updates on CommunitySponsor.org</p>
@@ -1006,7 +1028,7 @@ exports.uploadimageVideo = (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const fileUrl = `https://communitysponsoradmin.com/backend/uploads/proposals/${req.file.filename}`;
+    const fileUrl = `https://communitysponsor.org/backend/uploads/proposals/${req.file.filename}`;
     res.status(200).json({ file_url: fileUrl });
   });
 };
@@ -1167,8 +1189,16 @@ exports.sponsorPaymentCharge = async (req, res) => {
   }
 };
 exports.sponsorPaymentSave = (req, res) => {
-  const { confirmResult, proposal_id, host_id, amount, platformpercent, selectedTiers, user_id } = req.body;
- const selectedTiersJson = JSON.stringify(selectedTiers);
+  const {
+    confirmResult,
+    proposal_id,
+    host_id,
+    amount,
+    platformpercent,
+    selectedTiers,
+    user_id,
+  } = req.body;
+  const selectedTiersJson = JSON.stringify(selectedTiers);
   if (!confirmResult?.id || !user_id) {
     return res
       .status(400)
@@ -1226,11 +1256,18 @@ exports.sponsorPaymentSave = (req, res) => {
   });
 };
 
-
 exports.sponsorPaymentSavePaypal = (req, res) => {
-  const { confirmResult, proposal_id, host_id, amount, user_id,platformpercent,selectedTiers } = req.body;
+  const {
+    confirmResult,
+    proposal_id,
+    host_id,
+    amount,
+    user_id,
+    platformpercent,
+    selectedTiers,
+  } = req.body;
   const selectedTiersJson = JSON.stringify(selectedTiers);
- 
+
   if (!confirmResult?.id || !user_id) {
     return res
       .status(400)
@@ -1251,11 +1288,11 @@ exports.sponsorPaymentSavePaypal = (req, res) => {
     selectedTiersJson,
     user_id,
     confirmResult.id,
-    'succeeded',
+    "succeeded",
     "paypal",
     "usd",
     amount,
-    platformpercent
+    platformpercent,
   ];
 
   db.query(insertSql, insertValues, (err, result) => {
@@ -1287,7 +1324,6 @@ exports.sponsorPaymentSavePaypal = (req, res) => {
     });
   });
 };
-
 
 exports.updaterole = (req, res) => {
   let { roles, id } = req.body;
@@ -1720,7 +1756,7 @@ exports.proposalDataEdit = async (req, res) => {
     spnotes,
     numfamily,
     highlight,
-   deadline,
+    deadline,
     ticketsOnSale,
     ticketPrice,
     created_by,
@@ -1813,15 +1849,15 @@ exports.proposalDataEdit = async (req, res) => {
   }
 
   function formatDateToMySQL(date) {
-  if (!date) return null;
+    if (!date) return null;
 
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
-  const day = String(d.getDate()).padStart(2, "0");
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
+    const day = String(d.getDate()).padStart(2, "0");
 
-  return `${year}-${month}-${day}`; // "YYYY-MM-DD"
-}
+    return `${year}-${month}-${day}`; // "YYYY-MM-DD"
+  }
 
   const values = [
     event_type,
@@ -1940,15 +1976,19 @@ exports.getuser = async (req, res) => {
   });
 };
 
-
-  exports.updatesponserPayout = async (req, res) => {
+exports.updatesponserPayout = async (req, res) => {
   try {
     const { id, paypal_email } = req.body;
 
     // 1️⃣ Validate input
-    if (typeof id !== "number" || !paypal_email || typeof paypal_email !== "string") {
+    if (
+      typeof id !== "number" ||
+      !paypal_email ||
+      typeof paypal_email !== "string"
+    ) {
       return res.status(400).json({
-        message: "Invalid input: 'id' must be a number and 'paypal_email' must be a string",
+        message:
+          "Invalid input: 'id' must be a number and 'paypal_email' must be a string",
       });
     }
 
@@ -1957,7 +1997,9 @@ exports.getuser = async (req, res) => {
     db.query(checkQuery, [id], (checkErr, checkResult) => {
       if (checkErr) {
         console.error("DB check error:", checkErr);
-        return res.status(500).json({ message: "Database error", error: checkErr });
+        return res
+          .status(500)
+          .json({ message: "Database error", error: checkErr });
       }
 
       if (checkResult.length === 0) {
@@ -1971,13 +2013,17 @@ exports.getuser = async (req, res) => {
       db.query(updateQuery, [paypal_email, id], (updateErr, updateResult) => {
         if (updateErr) {
           console.error("DB update error:", updateErr);
-          return res.status(500).json({ message: "Database update error", error: updateErr });
+          return res
+            .status(500)
+            .json({ message: "Database update error", error: updateErr });
         }
 
         console.log("Update result:", updateResult);
 
         if (updateResult.affectedRows === 0) {
-          return res.status(500).json({ message: "Update failed: no rows affected" });
+          return res
+            .status(500)
+            .json({ message: "Update failed: no rows affected" });
         }
 
         // 4️⃣ Success
@@ -1991,6 +2037,8 @@ exports.getuser = async (req, res) => {
     });
   } catch (err) {
     console.error("Unexpected error:", err);
-    return res.status(500).json({ message: "Unexpected server error", error: err });
+    return res
+      .status(500)
+      .json({ message: "Unexpected server error", error: err });
   }
 };

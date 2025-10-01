@@ -1,5 +1,5 @@
 const db = require("../../db");
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const axios = require("axios");
@@ -8,21 +8,19 @@ const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
 const PAYPAL_API = "https://api-m.sandbox.paypal.com"; // switch to live when ready
 
-
-
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // or your SMTP provider
+  service: "gmail", // or your SMTP provider
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
-  }
+  },
 });
-
-
 
 // Helper: Generate PayPal access token
 async function generateAccessToken() {
-  const auth = Buffer.from(PAYPAL_CLIENT_ID + ":" + PAYPAL_SECRET).toString("base64");
+  const auth = Buffer.from(PAYPAL_CLIENT_ID + ":" + PAYPAL_SECRET).toString(
+    "base64"
+  );
   const response = await axios.post(
     PAYPAL_API + "/v1/oauth2/token",
     "grant_type=client_credentials",
@@ -37,27 +35,31 @@ async function generateAccessToken() {
 }
 
 // Create PayPal order and save to host_payments
- exports.createpaypalorder = async (req, res) => {
+exports.createpaypalorder = async (req, res) => {
   try {
     const { amount, hostId, proposalId, paymentMethod } = req.body;
 
     const accessToken = await generateAccessToken();
 
     // Get host email
- 
+
     const hostQuery = `SELECT paypalemailaddress FROM register WHERE id = ? LIMIT 1`;
     db.query(hostQuery, [hostId], async (err, hostResults) => {
-      if (err) return res.status(500).json({ success: false, message: "Database error fetching host", error: err });
-     
+      if (err)
+        return res.status(500).json({
+          success: false,
+          message: "Database error fetching host",
+          error: err,
+        });
 
       const hostEmail = hostResults[0].paypalemailaddress;
-      
+
       if (!hostEmail || hostEmail.trim() === "") {
-  return res.status(400).json({
-    success: false,
-    message: "Host's PayPal email not found"
-  });
-}
+        return res.status(400).json({
+          success: false,
+          message: "Host's PayPal email not found",
+        });
+      }
 
       // Create PayPal order
       const order = await axios.post(
@@ -75,27 +77,41 @@ async function generateAccessToken() {
             brand_name: "YourApp",
             landing_page: "LOGIN",
             user_action: "PAY_NOW",
-            return_url: `https://communitysponsoradmin.com/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
-  cancel_url: `https://communitysponsoradmin.com/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
+            return_url: `https://communitysponsor.org/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
+            cancel_url: `https://communitysponsor.org/admindashboard/?hostId=${hostId}&proposalId=${proposalId}&amount=${amount}`,
           },
         },
-        { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
       );
 
-      const approvalUrl = order.data.links.find(link => link.rel === "approve")?.href;
-      if (!approvalUrl) return res.status(400).json({ success: false, message: "No approval URL from PayPal" });
+      const approvalUrl = order.data.links.find(
+        (link) => link.rel === "approve"
+      )?.href;
+      if (!approvalUrl)
+        return res
+          .status(400)
+          .json({ success: false, message: "No approval URL from PayPal" });
 
       // Only return order info; do not insert yet
       res.json({ success: true, approvalUrl, orderId: order.data.id });
     });
   } catch (error) {
-    console.error("PayPal create order error:", error.response?.data || error.message);
-    res.status(500).json({ success: false, message: "Failed to create PayPal order" });
+    console.error(
+      "PayPal create order error:",
+      error.response?.data || error.message
+    );
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to create PayPal order" });
   }
 };
 
-
-  exports.capturePaypalOrder = async (req, res) => {
+exports.capturePaypalOrder = async (req, res) => {
   try {
     const { orderId, hostId, proposalId, amount } = req.body;
 
@@ -104,7 +120,12 @@ async function generateAccessToken() {
     const capture = await axios.post(
       `${PAYPAL_API}/v2/checkout/orders/${orderId}/capture`,
       {},
-      { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
     );
 
     if (capture.data.status === "COMPLETED") {
@@ -113,11 +134,23 @@ async function generateAccessToken() {
           (host_id, event_id, payment_type, amount, payment_method, transaction_id, status)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `;
-      const insertValues = [hostId, proposalId, "transfer", amount, "paypal", orderId, "succeeded"];
+      const insertValues = [
+        hostId,
+        proposalId,
+        "transfer",
+        amount,
+        "paypal",
+        orderId,
+        "succeeded",
+      ];
 
       db.query(insertQuery, insertValues, (err, result) => {
         if (err) {
-          return res.status(500).json({ success: false, message: "Database insert error", error: err });
+          return res.status(500).json({
+            success: false,
+            message: "Database insert error",
+            error: err,
+          });
         }
 
         // Update sponsorship_payments after successful host_payment insert
@@ -128,31 +161,37 @@ async function generateAccessToken() {
         `;
         db.query(updateQuery, [proposalId], (updateErr, updateResult) => {
           if (updateErr) {
-            return res.status(500).json({ success: false, message: "Failed to update sponsorship status", error: updateErr });
+            return res.status(500).json({
+              success: false,
+              message: "Failed to update sponsorship status",
+              error: updateErr,
+            });
           }
 
           res.json({
             success: true,
             capture: capture.data,
             paymentRecordId: result.insertId,
-            sponsorshipUpdate: updateResult.affectedRows
+            sponsorshipUpdate: updateResult.affectedRows,
           });
         });
       });
     } else {
-      res.status(400).json({ success: false, message: "Payment not completed", capture: capture.data });
+      res.status(400).json({
+        success: false,
+        message: "Payment not completed",
+        capture: capture.data,
+      });
     }
   } catch (err) {
     console.error("PayPal capture error:", err.response?.data || err.message);
-    res.status(500).json({ success: false, message: "Failed to capture PayPal order" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to capture PayPal order" });
   }
 };
 
-
-
-
-//  paypal Integration End 
-
+//  paypal Integration End
 
 exports.getusers = async (req, res) => {
   const query = `
@@ -178,7 +217,6 @@ exports.getusers = async (req, res) => {
   });
 };
 
-
 exports.getsponpays = async (req, res) => {
   const query = `
    SELECT sp.*, r.stripe_account_id, r.full_name, r.email
@@ -202,7 +240,6 @@ LIMIT 100;
     });
   });
 };
-
 
 exports.gethostpayments = async (req, res) => {
   const query = `
@@ -228,73 +265,73 @@ LIMIT 100;
   });
 };
 
-
-
- 
 exports.paytohost = async (req, res) => {
-
   const { amount, hostId, proposalId, paymentType, paymentMethod } = req.body;
 
   const query = `SELECT stripe_account_id, email FROM register WHERE id = ?;`;
   db.query(query, [hostId], async (err, results) => {
     if (err) {
       console.error("Database error:", err);
-      return res.status(500).json({ success: false, message: "Database query failed." });
+      return res
+        .status(500)
+        .json({ success: false, message: "Database query failed." });
     }
 
     if (results.length === 0) {
-      return res.status(404).json({ success: false, message: "Host not found." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Host not found." });
     }
 
     const hostAccountId = results[0].stripe_account_id;
     const hostEmail = results[0].email;
     if (!hostAccountId) {
-      return res.status(400).json({ success: false, message: "Host account ID not available." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Host account ID not available." });
     }
 
-  try {
+    try {
+      const transfer = await stripe.transfers.create({
+        amount: Math.round(amount * 100),
+        currency: "usd",
+        destination: hostAccountId,
+      });
 
-    const transfer = await stripe.transfers.create({
-      amount: Math.round(amount * 100),
-      currency: "usd",
-      destination: hostAccountId,
-    });
-
-    const query = `
+      const query = `
       INSERT INTO host_payments
         (host_id, event_id, payment_type, amount, payment_method, transaction_id, status)
       VALUES
         (?, ?, ?, ?, ?, ?, ?)
     `;
 
-    await db.execute(query, [
-      hostId,
-      proposalId,
-      paymentType,
-      amount,
-      paymentMethod,
-      transfer.id,
-      'succeeded'
-    ]);
+      await db.execute(query, [
+        hostId,
+        proposalId,
+        paymentType,
+        amount,
+        paymentMethod,
+        transfer.id,
+        "succeeded",
+      ]);
 
-   
-    const updateQuery = `
+      const updateQuery = `
       UPDATE sponsorship_payments
       SET paytohoststatus = 'yes'
       WHERE proposal_id = ?
     `;
-    await db.execute(updateQuery, [proposalId]);
- 
+      await db.execute(updateQuery, [proposalId]);
+
       const mailOptions = {
         from: process.env.EMAIL_USER,
         to: hostEmail,
-        subject: 'Payment Received',
+        subject: "Payment Received",
         text: `Hello,
 We are pleased to inform you that a payment of $${amount} has been successfully transferred to your account.
 Transaction ID: ${transfer.id}
 
 Thank you for partnering with us.
-Best regards`
+Best regards`,
       };
 
       transporter.sendMail(mailOptions, (error, info) => {
@@ -308,15 +345,12 @@ Best regards`
 
       // Respond to API call
       res.json({ success: true, transfer });
- 
-  } catch (error) {
-    console.error("Stripe transfer error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-
-});
-}
-
+    } catch (error) {
+      console.error("Stripe transfer error:", error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+};
 
 exports.getinvoices = async (req, res) => {
   const { user_id } = req.body; // get user_id from request body
@@ -349,7 +383,7 @@ WHERE hp.host_id = ?
 ORDER BY hp.host_id DESC
 LIMIT 100;
   `;
- 
+
   db.query(query, [user_id], (err, results) => {
     if (err) {
       return res.status(500).json({
@@ -365,23 +399,29 @@ LIMIT 100;
   });
 };
 
- exports.updaterole = async (req, res) => {
+exports.updaterole = async (req, res) => {
   try {
     const { user_id, current_role } = req.body;
 
     if (!user_id || !current_role) {
-      return res.status(400).json({ success: false, message: "Missing user_id or current_role" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing user_id or current_role" });
     }
 
     const query = "UPDATE register SET `current_role` = ? WHERE id = ?";
     db.query(query, [current_role, user_id], (err, result) => {
       if (err) {
         console.error("Error updating role:", err);
-        return res.status(500).json({ success: false, message: "Database error" });
+        return res
+          .status(500)
+          .json({ success: false, message: "Database error" });
       }
 
       if (result.affectedRows === 0) {
-        return res.status(404).json({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "User not found" });
       }
 
       return res.json({

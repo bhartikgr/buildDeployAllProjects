@@ -656,7 +656,7 @@ function sendEmailToHostForAgentApplication(to, agentName, proposalTitle) {
           You can review the agent's application in your dashboard.
         </p>
         <p style="margin-top: 20px;">
-          <a href="https://communitysponsoradmin.com/backend/agenthub" 
+          <a href="https://communitysponsor.org/backend/agenthub" 
              style="background-color:#16a34a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
              View Application
           </a>

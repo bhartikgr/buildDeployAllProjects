@@ -4661,8 +4661,8 @@ app.post("/admin/getweeklytimesheet", function (req, res) {
   var ndate = new Date();
   const formattedDate = ndate.toISOString().split("T")[0];
   db.query(
-    "SELECT attendance.* from rosters join attendance on  attendance.roster_id = rosters.id where rosters.user_id=? And attendance.hours IS NOT NULL",
-    [data.user_id],
+    "SELECT attendance.* from rosters join attendance on  attendance.roster_id = rosters.id where rosters.user_id=? And attendance.hours IS NOT NULL And attendance.activity_log = ?",
+    [data.user_id, "Process"],
     function (err, result, fields) {
       if (err) throw err;
 

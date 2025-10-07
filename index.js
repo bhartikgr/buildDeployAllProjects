@@ -3093,7 +3093,7 @@ app.post("/admin/getallUserCalendardetail", function (req, res) {
         roster_id
     ) AS subquery ON rosters.id = subquery.roster_id
   WHERE
-    attendance.date BETWEEN ? AND ? And attendance.shift_type = 'Add'
+    attendance.date BETWEEN ? AND ? And rosters.type = 'Coverage'
     AND (
       clients.name LIKE ? OR
       locations.location_name LIKE ? OR
@@ -4344,13 +4344,14 @@ app.post("/admin/getrosterrelated", function (req, res) {
   var data = req.body;
   const currentDate = new Date();
   const cr = getdays(currentDate);
+
   db.query(
-    "SELECT rosters.*,clients.name as cname,locations.location_name FROM rosters join locations on locations.id = rosters.location_id join clients on clients.id = rosters.client_id where rosters.user_id = ?",
-    [data.user_id, cr],
-    function (err, row, fields) {
+    "SELECT rosters.*,clients.name as cname,locations.location_name FROM rosters join locations on locations.id = rosters.location_id join clients on clients.id = rosters.client_id where rosters.user_id = ? And rosters.active_roster = ?",
+    [data.user_id, "Yes"],
+    function (err, results, fields) {
       if (err) throw err;
 
-      res.json({ row });
+      res.json({ results });
     }
   );
 });
@@ -4597,7 +4598,6 @@ async function weeklydates(
     const status = "1";
     res.json({ status });
   } catch (err) {
-    console.error(err);
     const status = 2; // Set status to 2 in case of an error
     res.json({ status });
   }
@@ -4723,7 +4723,7 @@ app.post("/admin/getuserweeklydata", function (req, res) {
   var start = convertDateFormat(data.start);
   var end = convertDateFormat(data.end);
   db.query(
-    "SELECT attendance.*,locations.location_name,clients.name from attendance join locations on locations.id = attendance.location_id join clients on clients.id = attendance.client_id where attendance.user_id =? And  attendance.date BETWEEN ? AND ? And attendance.roster_id =? And attendance.location_id = ? And attendance.client_id = ?  order by attendance.date asc",
+    "SELECT attendance.*,locations.location_name,clients.name from attendance join locations on locations.id = attendance.location_id join clients on clients.id = attendance.client_id where attendance.user_id =? And  attendance.date BETWEEN ? AND ? And attendance.roster_id =? And attendance.location_id = ? And attendance.client_id = ? And attendance.hours_status = ?  order by attendance.date asc",
     [
       data.user_id,
       start,
@@ -4731,6 +4731,7 @@ app.post("/admin/getuserweeklydata", function (req, res) {
       data.roster_id,
       data.location_id,
       data.client_id,
+      "User",
     ],
     function (err, results, fields) {
       if (err) throw err;
@@ -5065,8 +5066,8 @@ app.post("/users/getweeklytimesheetuser", function (req, res) {
   var ndate = new Date();
   const formattedDate = ndate.toISOString().split("T")[0];
   db.query(
-    "SELECT attendance.* from rosters join attendance on  attendance.roster_id = rosters.id where rosters.user_id=? And attendance.hours_status =? And attendance.client_id=?",
-    [data.user_id, "User", data.client_id],
+    "SELECT attendance.* from rosters join attendance on  attendance.roster_id = rosters.id where rosters.user_id=? And attendance.hours_status =? And attendance.client_id=?  And attendance.location_id=?",
+    [data.user_id, "User", data.client_id, data.location_id],
     function (err, result, fields) {
       if (err) throw err;
 
@@ -5082,25 +5083,27 @@ app.post("/users/getweeklytimesheetuser", function (req, res) {
 });
 
 app.post("/user/getuserweeklydataclient", function (req, res) {
-  var data = req.body;
-  var ndate = new Date();
-  const formattedDate = ndate.toISOString().split("T")[0];
-  //console.log(data);
+  const data = req.body;
+
   db.query(
-    "SELECT attendance.*,locations.location_name,clients.name from attendance join locations on locations.id = attendance.location_id join clients on clients.id = attendance.client_id where attendance.user_id =? And attendance.hours_status =? And attendance.date BETWEEN ? AND ?   order by attendance.date asc",
+    `SELECT 
+        attendance.*, 
+        locations.location_name, 
+        clients.name,
+        IF(attendance.roster IS NULL OR attendance.roster = '', 'Coverage', attendance.roster) AS roster
+     FROM attendance
+     JOIN locations ON locations.id = attendance.location_id
+     JOIN clients ON clients.id = attendance.client_id
+     WHERE attendance.user_id = ? 
+       AND attendance.hours_status = ? 
+       AND attendance.date BETWEEN ? AND ?
+     ORDER BY attendance.date ASC`,
     [data.user_id, "User", data.start, data.end],
-    function (err, results, fields) {
+    (err, results) => {
       if (err) throw err;
-      const data = [];
-      //console.log(results);
-      results.forEach((row) => {
-        var g = getdformate(row.date);
 
-        const formattedDate = g;
-        var currd = row.date;
-        const dayIndex = currd.getUTCDay();
-
-        // Array of human-readable day names
+      const formatted = results.map((row) => {
+        const dayIndex = row.date.getUTCDay();
         const daysOfWeek = [
           "Sunday",
           "Monday",
@@ -5111,18 +5114,19 @@ app.post("/user/getuserweeklydataclient", function (req, res) {
           "Saturday",
         ];
 
-        // Get the day of the week as a human-readable string
-        const dayName = daysOfWeek[dayIndex];
-        row.nd = formattedDate;
-        row.dd = dayName;
-        data.push(row);
+        return {
+          ...row,
+          nd: getdformate(row.date),
+          dd: daysOfWeek[dayIndex],
+          roster: row.roster, // already handled in SQL
+        };
       });
-      //console.log("sd");
-      //console.log(data);
-      res.json({ data });
+
+      res.json({ data: formatted });
     }
   );
 });
+
 app.post("/admin/editclient", function (req, res) {
   ////console.log(req.body);
   var data = req.body;

@@ -1226,7 +1226,7 @@ app.post("/admin/setRoster", function (req, res) {
               let rosters = {
                 number_day_start: number_day_start,
                 number_day_end: number_day_end,
-                duration_date: ss[0].duration_end,
+                duration_date: new Date(lastDate),
                 location_id: data.locationId,
                 client_id: data.clientID,
                 user_id: data.user_id,

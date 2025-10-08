@@ -1258,6 +1258,14 @@ app.post("/admin/setRoster", function (req, res) {
                         year: "numeric",
                       });
 
+                      const startDateemessage = new Date(
+                        data.date
+                      ).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      });
+
                       const endDatee = new Date(lastDate).toLocaleDateString(
                         "en-GB",
                         {
@@ -1267,7 +1275,7 @@ app.post("/admin/setRoster", function (req, res) {
                         }
                       );
 
-                      const msg = `Created a new ${data.type} roster starting from ${startDatee} until ${endDatee}.`;
+                      const msg = `Created a new ${data.type} roster starting from ${startDateemessage} until ${endDatee}.`;
                       let notifications = {
                         user_id: data.user_id,
                         message: msg,
@@ -4635,25 +4643,31 @@ async function updatefilecurrentRoster(
 }
 // Create a function to get the dates of the previous week
 function getPreviousWeekMondayToSunday(time = "24:00:00") {
-  const lastWeekStart = new Date();
-  lastWeekStart.setDate(lastWeekStart.getDate() - 7); // Go to previous week
+  const now = new Date();
 
-  // Find the Monday of the previous week
-  while (lastWeekStart.getDay() !== 1) {
-    lastWeekStart.setDate(lastWeekStart.getDate() - 1);
+  // Get previous month (handle January → December of previous year)
+  const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+  const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+
+  // Start of previous month
+  const startDate = new Date(year, prevMonth, 1);
+  // End of previous month
+  const endDate = new Date(year, prevMonth + 1, 0);
+
+  const previousMonthDates = [];
+
+  // Parse the given time (like "24:00:00")
+  const [hours, minutes, seconds] = time.split(":").map(Number);
+  startDate.setHours(hours, minutes, seconds, 0);
+
+  // Loop through all days of previous month
+  const current = new Date(startDate);
+  while (current <= endDate) {
+    previousMonthDates.push(new Date(current).toISOString());
+    current.setDate(current.getDate() + 1);
   }
 
-  lastWeekStart.setHours(18, 30, 0, 0); // Set desired time
-
-  const previousWeekDates = [];
-
-  for (let i = 0; i < 7; i++) {
-    const currentDate = new Date(lastWeekStart.getTime());
-    previousWeekDates.push(currentDate.toISOString());
-    lastWeekStart.setDate(lastWeekStart.getDate() + 1);
-  }
-
-  return previousWeekDates;
+  return previousMonthDates;
 }
 
 app.post("/admin/getweeklytimesheet", function (req, res) {
@@ -4667,7 +4681,7 @@ app.post("/admin/getweeklytimesheet", function (req, res) {
       if (err) throw err;
 
       if (result != "") {
-        var arr = createWeeklyRanges(result);
+        var arr = createMonthlyRanges(result);
       } else {
         var arr = [];
       }
@@ -4724,6 +4738,54 @@ app.post("/admin/getuserweeklydata", function (req, res) {
   var end = convertDateFormat(data.end);
   db.query(
     "SELECT attendance.*,locations.location_name,clients.name from attendance join locations on locations.id = attendance.location_id join clients on clients.id = attendance.client_id where attendance.user_id =? And  attendance.date BETWEEN ? AND ? And attendance.roster_id =? And attendance.location_id = ? And attendance.client_id = ?   order by attendance.date asc",
+    [
+      data.user_id,
+      start,
+      end,
+      data.roster_id,
+      data.location_id,
+      data.client_id,
+    ],
+    function (err, results, fields) {
+      if (err) throw err;
+      const data = [];
+      results.forEach((row) => {
+        var g = getdformate(row.date);
+
+        const formattedDate = g;
+        var currd = row.date;
+        const dayIndex = currd.getUTCDay();
+
+        // Array of human-readable day names
+        const daysOfWeek = [
+          "Sunday",
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+          "Saturday",
+        ];
+
+        // Get the day of the week as a human-readable string
+        const dayName = daysOfWeek[dayIndex];
+        row.nd = formattedDate;
+        row.dd = dayName;
+        data.push(row);
+      });
+      res.json({ data });
+    }
+  );
+});
+app.post("/admin/getuserMonthlydata", function (req, res) {
+  var data = req.body;
+  var ndate = new Date();
+  const formattedDate = ndate.toISOString().split("T")[0];
+
+  var start = convertDateFormat(data.start);
+  var end = convertDateFormat(data.end);
+  db.query(
+    "SELECT attendance.*,locations.location_name,clients.name from attendance join locations on locations.id = attendance.location_id join clients on clients.id = attendance.client_id where attendance.user_id =? And  attendance.date BETWEEN ? AND ? And attendance.roster_id =? And attendance.location_id = ? And attendance.client_id = ? And attendance.hours IS NOT NULL   order by attendance.date asc",
     [
       data.user_id,
       start,
@@ -4961,123 +5023,201 @@ app.post("/admin/deletecurrentroster", function (req, res) {
   const formattedDate = ndate.toISOString().split("T")[0];
 
   db.query(
-    "SELECT * FROM rosters WHERE user_id = ? AND month_end_date > ? AND active_roster = ?",
-    [data.user_id, formattedDate, "Yes"],
+    "SELECT * FROM rosters WHERE user_id = ? AND active_roster = ? AND id = ?",
+    [data.user_id, "Yes", data.roster_id],
     function (err, row) {
-      if (err) throw err;
+      if (err) {
+        console.error("Error checking roster:", err);
+        return res.json({ status: "0", message: "Database error occurred" });
+      }
 
-      if (row.length > 0) {
-        var dataa = row[0];
+      if (row.length === 0) {
+        return res.json({ status: "0", message: "No active roster found" });
+      }
 
-        // Delete roster
-        db.query(
-          "DELETE FROM rosters WHERE id = ?",
-          [dataa.id],
-          function (err) {
-            if (err) throw err;
+      // IMPORTANT: Store deleted roster details BEFORE deletion
+      var deletedRosterData = row[0];
+
+      // Step 1: Delete attendance records
+      db.query(
+        "DELETE FROM attendance WHERE roster_id = ?",
+        [data.roster_id],
+        function (err) {
+          if (err) {
+            console.error("Error deleting attendance:", err);
+            return res.json({
+              status: "0",
+              message: "Failed to delete attendance records",
+            });
           }
-        );
 
-        // Delete attendance
-        db.query(
-          "DELETE FROM attendance WHERE roster_id = ?",
-          [dataa.id],
-          function (err) {
-            if (err) throw err;
-          }
-        );
+          // Step 2: Delete the roster
+          db.query(
+            "DELETE FROM rosters WHERE id = ?",
+            [data.roster_id],
+            function (err) {
+              if (err) {
+                console.error("Error deleting roster:", err);
+                return res.json({
+                  status: "0",
+                  message: "Failed to delete roster",
+                });
+              }
 
-        // Find latest roster for the same user (after deletion)
-        db.query(
-          "SELECT * FROM rosters WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-          [data.user_id],
-          function (err, latest) {
-            if (err) throw err;
-
-            if (latest.length > 0) {
+              // Step 3: Find and activate the latest roster
               db.query(
-                "UPDATE rosters SET active_roster = 'Yes' WHERE id = ?",
-                [latest[0].id],
-                function (err) {
-                  if (err) throw err;
+                "SELECT * FROM rosters WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+                [data.user_id],
+                function (err, latest) {
+                  if (err) {
+                    console.error("Error finding latest roster:", err);
+                    return res.json({
+                      status: "1",
+                      message: "Roster deleted successfully",
+                    });
+                  }
+
+                  // If there's another roster, activate it
+                  if (latest.length > 0) {
+                    db.query(
+                      "UPDATE rosters SET active_roster = 'Yes' WHERE id = ?",
+                      [latest[0].id],
+                      function (err) {
+                        if (err) {
+                          console.error("Error updating active roster:", err);
+                          return res.json({
+                            status: "1",
+                            message: "Roster deleted successfully",
+                          });
+                        }
+
+                        // Create notification using DELETED roster data
+                        db.query(
+                          "SELECT * FROM users WHERE id = ?",
+                          [data.user_id],
+                          function (err, userRow) {
+                            if (err) {
+                              console.error("Error fetching user:", err);
+                              return res.json({
+                                status: "1",
+                                message: "Roster deleted successfully",
+                              });
+                            }
+
+                            if (userRow.length > 0) {
+                              var userDetail = userRow[0];
+
+                              // Use deletedRosterData instead of rosterDetail
+                              const msg = `${userDetail.first_name} ${
+                                userDetail.last_name
+                              } has deleted the ${
+                                deletedRosterData.type
+                              } roster starting from ${formatDateDelete(
+                                deletedRosterData.startdate
+                              )} until ${formatDateDelete(
+                                deletedRosterData.duration_date
+                              )}.`;
+
+                              let notifications = {
+                                user_id: data.user_id,
+                                message: msg,
+                                date: new Date(),
+                              };
+
+                              db.query(
+                                "INSERT INTO notifications SET ?",
+                                notifications,
+                                function (error) {
+                                  if (error) {
+                                    console.error(
+                                      "Error creating notification:",
+                                      error
+                                    );
+                                  }
+                                  return res.json({
+                                    status: "1",
+                                    message: "Roster deleted successfully",
+                                  });
+                                }
+                              );
+                            } else {
+                              return res.json({
+                                status: "1",
+                                message: "Roster deleted successfully",
+                              });
+                            }
+                          }
+                        );
+                      }
+                    );
+                  } else {
+                    // No other rosters exist, still create notification
+                    db.query(
+                      "SELECT * FROM users WHERE id = ?",
+                      [data.user_id],
+                      function (err, userRow) {
+                        if (err) {
+                          console.error("Error fetching user:", err);
+                          return res.json({
+                            status: "1",
+                            message: "Roster deleted successfully",
+                          });
+                        }
+
+                        if (userRow.length > 0) {
+                          var userDetail = userRow[0];
+
+                          const msg = `${userDetail.first_name} ${
+                            userDetail.last_name
+                          } has deleted the ${
+                            deletedRosterData.type
+                          } roster starting from ${formatDateDelete(
+                            deletedRosterData.startdate
+                          )} until ${formatDateDelete(
+                            deletedRosterData.duration_date
+                          )}.`;
+
+                          let notifications = {
+                            user_id: data.user_id,
+                            message: msg,
+                            date: new Date(),
+                          };
+
+                          db.query(
+                            "INSERT INTO notifications SET ?",
+                            notifications,
+                            function (error) {
+                              if (error) {
+                                console.error(
+                                  "Error creating notification:",
+                                  error
+                                );
+                              }
+                              return res.json({
+                                status: "1",
+                                message: "Roster deleted successfully",
+                              });
+                            }
+                          );
+                        } else {
+                          return res.json({
+                            status: "1",
+                            message: "Roster deleted successfully",
+                          });
+                        }
+                      }
+                    );
+                  }
                 }
               );
             }
-          }
-        );
-
-        // Notification
-        db.query(
-          "SELECT * FROM users WHERE id = ?",
-          [data.user_id],
-          function (err, row) {
-            if (err) throw err;
-            var userDetail = row[0];
-
-            const msg = `${userDetail.first_name} ${
-              userDetail.last_name
-            } has deleted the ${
-              dataa.type
-            } roster starting from ${formatDateDelete(
-              dataa.startdate
-            )} until ${formatDateDelete(dataa.enddate)}.`;
-
-            let notifications = {
-              user_id: data.user_id,
-              message: msg,
-              date: new Date(),
-            };
-            db.query(
-              "INSERT INTO notifications SET ?",
-              notifications,
-              function (error) {
-                if (error) throw error;
-              }
-            );
-          }
-        );
-
-        res.json({ status: "1", message: "Roster deleted successfully" });
-      } else {
-        res.json({ status: "0", message: "No active roster found" });
-      }
+          );
+        }
+      );
     }
   );
 });
 
-function getWeekDaysWithDates(inputDate) {
-  const daysOfWeek = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-  ];
-  const result = [];
-
-  // Create a new Date object based on the input date
-  const currentDate = new Date(inputDate);
-
-  // Calculate the start and end dates of the week
-  const startDate = new Date(currentDate);
-  startDate.setDate(startDate.getDate() - ((currentDate.getDay() - 1 + 7) % 7)); // Go back to the beginning of the week (Monday)
-  const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + 6); // Go to the end of the week (Sunday)
-
-  // Loop through the days of the week and store their names and dates
-  for (let i = 0; i < 7; i++) {
-    const day = new Date(startDate);
-    day.setDate(day.getDate() + i);
-    result.push({
-      dayName: daysOfWeek[i],
-      date: day.toISOString().slice(0, 10), // Format the date as 'YYYY-MM-DD'
-    });
-  }
-
-  return result;
-}
 function createWeeklyRanges(dates) {
   const groups = dates.reduce((groups, dateObj) => {
     const date = new Date(dateObj.date);
@@ -5088,6 +5228,35 @@ function createWeeklyRanges(dates) {
   }, {});
 
   const output = Object.entries(groups).map(([week, dates]) => {
+    return {
+      start: getdays(dates[0].date),
+      end: getdays(dates[dates.length - 1].date),
+      user_id: dates[0].user_id,
+      roster_id: dates[0].roster_id,
+      client_id: dates[0].client_id,
+      location_id: dates[0].location_id,
+    };
+  });
+
+  return output;
+}
+
+function createMonthlyRanges(dates) {
+  const groups = dates.reduce((groups, dateObj) => {
+    const date = new Date(dateObj.date);
+    const monthKey = `${date.getUTCFullYear()}-${String(
+      date.getUTCMonth() + 1
+    ).padStart(2, "0")}`;
+    // Example: "2025-10"
+    groups[monthKey] = groups[monthKey] || [];
+    groups[monthKey].push(dateObj);
+    return groups;
+  }, {});
+
+  const output = Object.entries(groups).map(([monthKey, dates]) => {
+    // Sort dates in case they’re not already
+    dates.sort((a, b) => new Date(a.date) - new Date(b.date));
+
     return {
       start: getdays(dates[0].date),
       end: getdays(dates[dates.length - 1].date),
@@ -5120,7 +5289,7 @@ app.post("/users/getweeklytimesheetuser", function (req, res) {
       if (err) throw err;
 
       if (result != "") {
-        var arr = createWeeklyRanges(result);
+        var arr = createMonthlyRanges(result);
       } else {
         var arr = [];
       }

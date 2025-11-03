@@ -5,7 +5,9 @@ const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 const Stripe = require("stripe");
-
+const stripe = new Stripe(
+  "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"
+);
 require("dotenv").config();
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -427,14 +429,13 @@ exports.sponsorfilter = (req, res) => {
   });
 };
 
+
 exports.createstripe = async (req, res) => {
   try {
     const { stripeemail, userId } = req.body;
 
     if (!stripeemail || !userId) {
-      return res
-        .status(400)
-        .json({ error: "Stripe email and userId are required" });
+      return res.status(400).json({ error: "Stripe email and userId are required" });
     }
 
     // 1. Create Stripe account
@@ -467,7 +468,9 @@ exports.createstripe = async (req, res) => {
 
       // 4. Send onboarding link back
       res.json({ accountLink: accountLink.url });
+      
     });
+
   } catch (error) {
     console.error("Stripe error:", error);
     res.status(500).json({ error: error.message });

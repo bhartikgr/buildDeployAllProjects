@@ -8,6 +8,7 @@ router.post("/localloadProposal", sponserController.localloadProposal);
 router.post("/register", sponserController.register);
 router.post("/change-password", sponserController.changePassword);
 router.post("/login", sponserController.login);
+router.post("/checkuser", sponserController.checkUser);
 router.post("/getEvents", sponserController.getEvents);
 router.post("/localloadEvents", sponserController.localloadEvents);
 router.post("/proposalData", sponserController.proposalData);

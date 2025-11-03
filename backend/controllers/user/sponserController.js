@@ -328,6 +328,43 @@ Communitysponsor.org Team
 }
 
 
+
+
+function resetpassword(to, newPassword) {
+  const subject = `Reset Password Mail From Communitysponsor.org - Your Login Details`;
+
+  const body = `
+Dear User,
+
+Your Password has been successfully changed. Below are your login credentials:
+
+**Email:** ${to}  
+**Password:** ${newPassword}
+
+Please log in and change this password immediately to keep your account secure.
+
+If you have any questions or need assistance, feel free to contact our support team.
+
+We're excited to have you on board!
+
+Regards,  
+Communitysponsor.org Team
+  `;
+
+  const mailOptions = {
+    from: "Communitysponsor.org",
+    to,
+    subject,
+    text: body,
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) console.error("Error sending email:", error);
+    else console.log("Reset Password Mail:", info.response);
+  });
+}
+
+
 exports.proposalData = async (req, res) => {
   const data = req.body;
   const {
@@ -830,6 +867,82 @@ exports.login = async (req, res) => {
     });
   }
 };
+
+
+exports.checkUser = async (req, res) => {
+  const { email, userType } = req.body;
+ 
+  if (!email || !userType) {
+    return res
+      .status(400)
+      .json({ message: "Email and user type are required", exists: false });
+  }
+
+  try {
+    // 🟢 Check if user exists in the database
+ 
+    db.query(
+      "SELECT * FROM register WHERE email = ? AND `current_role` = ?",
+      [email, userType],
+      async (err, rows) => {
+        if (err) {
+          console.error("Database query error:", err);
+          return res
+            .status(500)
+            .json({ message: "Database query error", exists: false });
+        }
+        console.log(rows);
+       if (rows.length > 0) {
+  const plainPassword = crypto
+    .randomBytes(6)
+    .toString("base64")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(0, 10);
+
+  bcrypt.hash(plainPassword, 10, (err, hashedPassword) => {
+    if (err) {
+      console.error("Hash error:", err);
+      return res.status(500).json({ message: "Server error" });
+    }
+
+    db.query(
+      "UPDATE register SET viewpassword = ?, password = ? WHERE email = ? AND `current_role` = ?",
+      [plainPassword, hashedPassword, email, userType],
+      (error, result) => {
+        if (error) {
+          console.error("DB update error:", error);
+          return res.status(500).json({ message: "Server error" });
+        }
+
+        return res.status(200).json({
+          message: "Password reset successful. Please check your email.",
+          exists: true,
+          user: rows[0],
+        });
+      }
+    );
+
+    resetpassword(email, plainPassword);
+  });
+}
+
+ else {
+          return res
+            .status(404)
+            .json({ message: "User not found", exists: false });
+        }
+      }
+    );
+  } catch (err) {
+    console.error("Server error:", err);
+    res.status(500).json({
+      message: "Server error",
+      exists: false,
+    });
+  }
+};
+
+
 exports.emailBlast = async (req, res) => {
   const {
     proposal_id,

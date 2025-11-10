@@ -78,6 +78,7 @@ exports.getbrowserEvents = async (req, res) => {
     });
   });
 };
+
 exports.createeventTovendor = async (req, res) => {
   const data = req.body;
 

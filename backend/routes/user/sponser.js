@@ -13,6 +13,8 @@ router.post("/getEvents", sponserController.getEvents);
 router.post("/localloadEvents", sponserController.localloadEvents);
 router.post("/proposalData", sponserController.proposalData);
 router.post("/hostpurchase", sponserController.hostpurchase);
+router.post("/sponsorshipproposal/:id", sponserController.geteventforadmin);
+ 
 
 router.post(
   "/getSponsorshipProposal",
@@ -30,6 +32,8 @@ router.post(
   "/getsponsorSubscriptiondetail",
   sponserController.getsponsorSubscriptiondetail
 );
+
+ router.post("/getnotifications", sponserController.getnotifications);
 router.post("/paymentCharge", sponserController.paymentCharge);
 router.post("/paymentSave", sponserController.paymentSave);
 router.post("/sponsorPaymentCharge", sponserController.sponsorPaymentCharge);
@@ -58,6 +62,16 @@ router.post(
   "/getSponsorshipProposalHostpage",
   sponserController.getSponsorshipProposalHostpage
 );
+router.post(
+  "/archiveProposal",
+  sponserController.archiveSponsorshipProposal
+);
+
+router.post(
+  "/deleteProposal",
+  sponserController.deleteSponsorshipProposal
+);
+
 router.post("/updateSponsorSetup", sponserController.updateSponsorSetup);
 router.post("/getuser", sponserController.getuser);
 router.post("/updatePayout", sponserController.updatesponserPayout);

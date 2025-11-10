@@ -5,8 +5,12 @@ const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 const Stripe = require("stripe");
+// const stripe = new Stripe(
+//   "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"
+// );
+
 const stripe = new Stripe(
-  "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"
+  "sk_test_51Ry7pYC6wQEkRTK5gka0vMGtvbLUrUHJ7za2obMszZK73AGaEMyJTJHXBNl3qmdIBveE8jG3OhGfQsQg0GvMPju90035SC6rRh"
 );
  
 require("dotenv").config();
@@ -472,12 +476,146 @@ exports.proposalData = async (req, res) => {
       return res.status(500).json({ message: "Insert failed", error: err });
     }
 
+ const getEmailsQuery = `
+  SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
+  FROM \`register\`
+  WHERE \`current_role\` LIKE '%business_sponsor%'
+`;
+
+db.query(getEmailsQuery, (err, emailResult) => {
+  if (err) {
+    console.error("Error fetching sponsor emails:", err);
+    return res.status(500).json({ message: "Error fetching sponsor emails" });
+  }
+  const sponsorEmails = emailResult[0]?.sponsorEmails || null;
+  console.log(created_by);
+   sendEmailTosponsors(
+    sponsorEmails, title, created_by,
+   )
+
+});
+  
+
     return res.status(201).json({
       message: "Proposal inserted successfully",
       insertId: result.insertId,
     });
   });
 };
+
+
+//Email For All Sponsores
+function sendEmailTosponsors(
+  to,
+  proposalTitle,
+  hostEmail
+) {
+  const subject = `🎉 A New Event Proposal Published!`;
+
+  const body  = `
+<html>
+  <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <h2 style="color: #2b6cb0;">🎉 A New Event Proposal Published!</h2>
+    <p>
+      A new proposal titled <strong>"${proposalTitle}"</strong> has been published.
+    </p>
+    <p>
+      Please check and contact the host if you are interested:
+      <a href="mailto:${hostEmail}" style="color: #1a73e8;">${hostEmail}</a>
+    </p>
+    <p>
+      <strong>Published by:</strong> ${created_by}
+    </p>
+    <br>
+    <p>Best regards,<br>
+    <strong>CommunitySponsor.org Team</strong></p>
+  </body>
+</html>
+`;
+
+  const mailOptions = {
+    from: "Communitysponsor.org <avinayquicktech@gmail.com>",
+    to,
+    subject,
+    text: body,
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error("Error sending email:", error);
+    } else {
+      console.log("Sponsors notification sent to all", info.response);
+    }
+  });
+}
+
+
+//Email For All Sponsores
+ function sendEmailToEditsponsors(to, proposalTitle, hostEmail, proposalId) {
+  const subject = `🎉 An Event Proposal Has Been Edited!`;
+
+  const htmlBody = `
+  <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <h2 style="color: #2b6cb0;">🎉 Event Proposal Updated</h2>
+      <p>
+        A proposal titled <strong>"${proposalTitle}"</strong> has been edited by 
+        <strong>${hostEmail}</strong>.
+      </p>
+      <p>
+        Please check the updated details here: 
+        <a href="https://communitysponsor.org/proposaldetails?id=${proposalId}" target="_blank" style="color: #1a73e8; text-decoration: none;">
+          View Proposal
+        </a>
+      </p>
+      <br>
+      <p>
+        Best regards,<br>
+        <strong>CommunitySponsor.org Team</strong>
+      </p>
+    </body>
+  </html>
+  `;
+
+  const mailOptions = {
+    from: "Communitysponsor.org <avinayquicktech@gmail.com>",
+    to,
+    subject,
+    html: htmlBody, // ✅ use HTML instead of plain text
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error("Error sending email:", error);
+    } else {
+      console.log("Sponsors notification sent to all:", info.response);
+    }
+  });
+}
+
+
+
+ exports.geteventforadmin = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT created_by_id FROM sponsorshipproposal_export WHERE id = ?",
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("DB error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+
 
 exports.hostpurchase = async (req, res) => {
   const {
@@ -534,6 +672,9 @@ exports.hostpurchase = async (req, res) => {
     });
   });
 };
+ 
+
+ 
 
 exports.getSponsorshipProposal = async (req, res) => {
   var data = req.body;
@@ -573,6 +714,91 @@ exports.getSponsorshipProposalHostpage = async (req, res) => {
     });
   });
 };
+
+exports.archiveSponsorshipProposal = async (req, res) => {
+  const data = req.body;
+  console.log("Archiving proposal:", data);
+
+  if (!data.proposal_id) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing proposal_id",
+    });
+  }
+
+  const query = `
+    UPDATE sponsorshipproposal_export 
+    SET status = ? 
+    WHERE id = ?
+  `;
+
+  db.query(query, [data.status || "archived", data.proposal_id, data.created_by], (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Database query error",
+        error: err,
+      });
+    }
+
+    if (results.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Proposal not found or not owned by this user",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Proposal archived successfully",
+    });
+  });
+};
+
+
+
+exports.deleteSponsorshipProposal = async (req, res) => {
+  const data = req.body;
+  console.log("Deleting proposal:", data);
+
+  if (!data.proposal_id) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing proposal_id",
+    });
+  }
+
+  const query = `
+    DELETE FROM sponsorshipproposal_export 
+    WHERE id = ?
+  `;
+
+  db.query(query, [data.proposal_id], (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Database query error",
+        error: err,
+      });
+    }
+
+    if (results.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Proposal not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Proposal deleted permanently",
+    });
+  });
+};
+
+
 
 exports.registerwithgoogle = async (req, res) => {
   const {
@@ -866,6 +1092,34 @@ exports.login = async (req, res) => {
       error: err.message,
     });
   }
+};
+
+
+// Get Host Notifications
+exports.getnotifications = async (req, res) => {
+  const { user_id } = req.body;
+
+  if (!user_id) {
+    return res.status(400).json({
+      message: "user_id is required",
+    });
+  }
+
+  const query = `SELECT * FROM notifications WHERE user_id = ? AND user_type = 'event_host';`;
+ 
+  db.query(query, [user_id], (err, results) => {
+    if (err) {
+      return res.status(500).json({
+        message: "Database query error",
+        error: err,
+      });
+    }
+
+    res.status(200).json({
+      message: "Notification fetched",
+      results,
+    });
+  });
 };
 
 
@@ -1219,7 +1473,7 @@ exports.getbrowserevents = async (req, res) => {
       .json({ message: "Invalid or empty eventIds", results: [] });
   }
 
-  console.log("Received event IDs:", eventIds); // should log ['2', '1', '3']
+  console.log("Received event IDs:", eventIds);
 
   const placeholders = eventIds.map(() => "?").join(", ");
   const query = `
@@ -1364,8 +1618,9 @@ exports.sponsorPaymentCharge = async (req, res) => {
     res.status(500).json({ status: "2", message: error.message });
   }
 };
+
 exports.sponsorPaymentSave = (req, res) => {
-  const { confirmResult, proposal_id, host_id, amount, platformpercent, selectedTiers, user_id } = req.body;
+  const { confirmResult, proposal_id, host_id, amount, platformpercent, selectedTiers, user_id, ptitle, sponsoremail, sponsorfullname, host_email } = req.body;
  const selectedTiersJson = JSON.stringify(selectedTiers);
   if (!confirmResult?.id || !user_id) {
     return res
@@ -1403,30 +1658,40 @@ exports.sponsorPaymentSave = (req, res) => {
     }
 
     // Update is_funded in sponsorshipproposal_export table
-    const updateSql = `
-      UPDATE sponsorshipproposal_export
-      SET is_funded = 1
-      WHERE id = ?
-    `;
-    db.query(updateSql, [proposal_id], (updateErr, updateResult) => {
-      if (updateErr) {
-        console.error("Update error:", updateErr);
-        return res
-          .status(500)
-          .json({ status: "3", message: "Update failed", error: updateErr });
-      }
+  const updateSql = `
+  UPDATE sponsorshipproposal_export
+  SET is_funded = 1
+  WHERE id = ?
+`;
 
-      return res.status(200).json({
+db.query(updateSql, [proposal_id], (updateErr, updateResult) => {
+  if (updateErr) {
+  console.error("Update error:", updateErr);
+  return res
+      .status(500)
+      .json({ status: "3", message: "Update failed", error: updateErr });
+  }
+ sendEmailToHostProposalsold(
+  host_email,
+  ptitle,
+  sponsorfullname,
+  sponsoremail
+)
+  return res.status(200).json({
         status: "1",
-        message: "Subscription saved and proposal marked as funded",
-      });
-    });
+        message: "Subscription saved, proposal marked as funded, and notification sent."
+   });
+
+ 
+});
+
   });
 };
 
+ 
 
 exports.sponsorPaymentSavePaypal = (req, res) => {
-  const { confirmResult, proposal_id, host_id, amount, user_id,platformpercent,selectedTiers } = req.body;
+  const { confirmResult, proposal_id, host_id, amount, user_id,platformpercent,selectedTiers, ptitle, sponsoremail, sponsorfullname, host_email } = req.body;
   const selectedTiersJson = JSON.stringify(selectedTiers);
  
   if (!confirmResult?.id || !user_id) {
@@ -1478,6 +1743,13 @@ exports.sponsorPaymentSavePaypal = (req, res) => {
           .json({ status: "3", message: "Update failed", error: updateErr });
       }
 
+      sendEmailToHostProposalsold(
+  host_email,
+  ptitle,
+  sponsorfullname,
+  sponsoremail
+)
+
       return res.status(200).json({
         status: "1",
         message: "Subscription saved and proposal marked as funded",
@@ -1486,6 +1758,41 @@ exports.sponsorPaymentSavePaypal = (req, res) => {
   });
 };
 
+//Email For Host
+function sendEmailToHostProposalsold(
+  to,
+  proposalTitle,
+  sponsorName,
+  sponsorEmail
+) {
+  const subject = `🎉 A sponsor has sponsored your event proposal!`;
+
+  const body = `
+Hello,
+
+Great news! 🎉  
+Sponsor **${sponsorName}** has just sponsored your proposal **"${proposalTitle}"** can now contact you.
+
+Or You can contact on "${sponsorEmail}"
+
+Best regards,  
+Communitysponsor.org Team`;
+
+  const mailOptions = {
+    from: "Communitysponsor.org <avinayquicktech@gmail.com>",
+    to,
+    subject,
+    text: body,
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error("Error sending email:", error);
+    } else {
+      console.log("Host notification email sent:", info.response);
+    }
+  });
+}
 
 exports.updaterole = (req, res) => {
   let { roles, id } = req.body;
@@ -2058,6 +2365,27 @@ exports.proposalDataEdit = async (req, res) => {
       console.error("Update Error:", err);
       return res.status(500).json({ message: "Update failed", error: err });
     }
+
+  
+const getEmailsQuery = `
+  SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
+  FROM \`register\`
+  WHERE \`current_role\` LIKE '%business_sponsor%'
+`;
+
+db.query(getEmailsQuery, (err, emailResult) => {
+  if (err) {
+    console.error("Error fetching sponsor emails:", err);
+    return res.status(500).json({ message: "Error fetching sponsor emails" });
+  }
+  const sponsorEmails = emailResult[0]?.sponsorEmails || null;
+  console.log(created_by , id );
+   sendEmailToEditsponsors(
+    sponsorEmails, title, created_by,id
+   )
+
+});
+  
 
     return res.status(200).json({
       message: "Proposal updated successfully",

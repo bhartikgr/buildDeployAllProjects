@@ -57,7 +57,8 @@ router.post(
 );
 router.post("/getproposalDetailEdit", sponserController.getproposalDetailEdit);
 router.post("/proposalDataEdit", sponserController.proposalDataEdit);
-
+router.post("/adminproposaldataedit", sponserController.adminproposalDataEdit);
+ 
 router.post(
   "/getSponsorshipProposalHostpage",
   sponserController.getSponsorshipProposalHostpage

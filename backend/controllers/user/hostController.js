@@ -464,8 +464,8 @@ exports.createstripe = async (req, res) => {
       // 3. Create onboarding link
       const accountLink = await stripe.accountLinks.create({
         account: account.id,
-        refresh_url: "https://communitysponsor.org/backend/payoutsettings",
-        return_url: "https://communitysponsor.org/backend/payoutsettings",
+        refresh_url: "http://localhost:5000/payoutsettings",
+        return_url: "http://localhost:5000/payoutsettings",
         type: "account_onboarding",
       });
 

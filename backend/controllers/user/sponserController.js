@@ -594,6 +594,49 @@ function sendEmailTosponsors(
 }
 
 
+function sendEmailToEditsponsorsbyadmin(to, proposalTitle, proposalId) {
+  const subject = `🎉 An Event Proposal Has Been Edited!`;
+
+  const htmlBody = `
+  <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <h2 style="color: #2b6cb0;">🎉 Event Proposal Updated</h2>
+      <p>
+        A proposal titled <strong>"${proposalTitle}"</strong> has been edited by 
+        <strong>Admin</strong>.
+      </p>
+      <p>
+        Please check the updated details here: 
+        <a href="https://communitysponsor.org/proposaldetails?id=${proposalId}" target="_blank" style="color: #1a73e8; text-decoration: none;">
+          View Proposal
+        </a>
+      </p>
+      <br>
+      <p>
+        Best regards,<br>
+        <strong>CommunitySponsor.org Team</strong>
+      </p>
+    </body>
+  </html>
+  `;
+
+  const mailOptions = {
+    from: "Communitysponsor.org <avinayquicktech@gmail.com>",
+    to,
+    subject,
+    html: htmlBody, // ✅ use HTML instead of plain text
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error("Error sending email:", error);
+    } else {
+      console.log("Sponsors notification sent to all:", info.response);
+    }
+  });
+}
+
+
 
  exports.geteventforadmin = async (req, res) => {
   const { id } = req.params;
@@ -1458,7 +1501,7 @@ exports.uploadimageVideo = (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const fileUrl = `https://communitysponsor.org/backend/uploads/proposals/${req.file.filename}`;
+    const fileUrl = `http://localhost:5000/uploads/proposals/${req.file.filename}`;
     res.status(200).json({ file_url: fileUrl });
   });
 };
@@ -2198,6 +2241,202 @@ exports.getproposalDetailEdit = async (req, res) => {
   });
 };
 
+exports.adminproposalDataEdit = async (req, res) => {
+  const data = req.body;
+   
+  const {
+    id,
+    event_type,
+    title,
+    eventId,
+    description,
+    amount_requested,
+    sponsorship_type,
+    sponsorship_tiers,
+    event_reach,
+    event_platform_type,
+    event_platform_link,
+    audience_demographics,
+    benefits,
+    purchased_addons,
+    email_blast_sent,
+    analytics_enabled,
+    is_featured,
+    status,
+    images,
+    video_links,
+    location,
+    spnotes,
+    numfamily,
+    highlight,
+   deadline,
+    ticketsOnSale,
+    ticketPrice,
+    created_by_id,
+  } = data;
+
+  const created_at = new Date();
+
+  const updateQuery = `
+  UPDATE sponsorshipproposal_export
+  SET
+    event_type = ?,
+    title = ?,
+    event_id = ?,
+    description = ?,
+    amount_requested = ?,
+    sponsorship_type = ?,
+    sponsorship_tiers = ?,
+    event_reach = ?,
+    event_platform_type = ?,
+    event_platform_link = ?,
+    audience_demographics = ?,
+    benefits = ?,
+    purchased_addons = ?,
+    email_blast_sent = ?,
+    analytics_enabled = ?,
+    is_featured = ?,
+    status = ?,
+    images = ?,
+    video_links = ?,
+    location = ?,
+    spnotes = ?,
+    numfamily = ?,
+    highlight = ?,
+    deadline = ?,
+    ticketsOnSale = ?,
+    ticketPrice = ?,
+    created_date = ?,
+    created_by_id = ?
+  WHERE id = ?
+`;
+  let videoLinksToStore;
+  if (Array.isArray(video_links)) {
+    videoLinksToStore = JSON.stringify(video_links);
+  } else if (typeof video_links === "string") {
+    videoLinksToStore = video_links;
+  } else {
+    videoLinksToStore = "[]";
+  }
+  let imagesToStore;
+  if (Array.isArray(images)) {
+    imagesToStore = JSON.stringify(images);
+  } else if (typeof images === "string") {
+    // already a JSON string from DB, use as is
+    imagesToStore = images;
+  } else {
+    imagesToStore = "[]"; // fallback empty array
+  }
+
+  let benefitsStore;
+  if (Array.isArray(benefits)) {
+    benefitsStore = JSON.stringify(benefits);
+    console.log(benefitsStore);
+  } else if (typeof benefits === "string") {
+    // already a JSON string from DB, use as is
+    benefitsStore = benefits;
+  } else {
+    benefitsStore = "[]"; // fallback empty array
+  }
+
+  let sponsorship_tiersStore;
+  if (Array.isArray(sponsorship_tiers)) {
+    sponsorship_tiersStore = JSON.stringify(sponsorship_tiers);
+  } else if (typeof sponsorship_tiers === "string") {
+    // already a JSON string from DB, use as is
+    sponsorship_tiersStore = sponsorship_tiers;
+  } else {
+    sponsorship_tiersStore = "[]"; // fallback empty array
+  }
+
+  let purchased_addonsStore;
+  if (Array.isArray(purchased_addons)) {
+    purchased_addonsStore = JSON.stringify(purchased_addons);
+  } else if (typeof purchased_addons === "string") {
+    // already a JSON string from DB, use as is
+    purchased_addonsStore = purchased_addons;
+  } else {
+    purchased_addonsStore = "[]"; // fallback empty array
+  }
+
+  function formatDateToMySQL(date) {
+  if (!date) return null;
+
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`; // "YYYY-MM-DD"
+}
+
+  const values = [
+    event_type,
+    title,
+    eventId,
+    description,
+    amount_requested,
+    sponsorship_type,
+    sponsorship_tiersStore,
+    event_reach,
+    event_platform_type,
+    event_platform_link,
+    audience_demographics,
+    benefitsStore,
+    purchased_addonsStore,
+    email_blast_sent,
+    analytics_enabled,
+    is_featured,
+    status,
+    imagesToStore,
+    videoLinksToStore,
+    location,
+    spnotes,
+    numfamily,
+    highlight,
+    formatDateToMySQL(deadline),
+    ticketsOnSale,
+    ticketPrice,
+    created_at,
+    created_by_id,
+    id, // the id of the record to update
+  ];
+  db.query(updateQuery, values, (err, result) => {
+    if (err) {
+      console.error("Update Error:", err);
+      return res.status(500).json({ message: "Update failed", error: err });
+    }
+
+  
+const getEmailsQuery = `
+  SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
+  FROM \`register\`
+  WHERE \`current_role\` LIKE '%business_sponsor%'
+`;
+
+db.query(getEmailsQuery, (err, emailResult) => {
+  if (err) {
+    console.error("Error fetching sponsor emails:", err);
+    return res.status(500).json({ message: "Error fetching sponsor emails" });
+  }
+  const sponsorEmails = emailResult[0]?.sponsorEmails || null;
+  
+   sendEmailToEditsponsorsbyadmin(
+    sponsorEmails, title,id
+   )
+
+});
+  
+
+    return res.status(200).json({
+      message: "Proposal updated successfully",
+      affectedRows: result.affectedRows,
+    });
+  });
+};
+
+
+
 exports.proposalDataEdit = async (req, res) => {
   const data = req.body;
   const {
@@ -2393,6 +2632,7 @@ db.query(getEmailsQuery, (err, emailResult) => {
     });
   });
 };
+
 
 // controller/sponsorController.js
 

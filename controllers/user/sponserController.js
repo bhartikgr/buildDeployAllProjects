@@ -5,15 +5,10 @@ const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 const Stripe = require("stripe");
-// const stripe = new Stripe(
-//   "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"
-// );
-
-const stripe = new Stripe(
-  "sk_test_51Ry7pYC6wQEkRTK5gka0vMGtvbLUrUHJ7za2obMszZK73AGaEMyJTJHXBNl3qmdIBveE8jG3OhGfQsQg0GvMPju90035SC6rRh"
-);
- 
 require("dotenv").config();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const cron = require("node-cron");
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -213,9 +208,7 @@ exports.register = async (req, res) => {
   });
 };
 
-
-
- exports.changePassword = async (req, res) => {
+exports.changePassword = async (req, res) => {
   const { id, newPassword } = req.body;
 
   if (!id || !newPassword) {
@@ -242,16 +235,24 @@ exports.register = async (req, res) => {
         WHERE id = ?
       `;
 
-      db.query(updateQuery, [hashedNewPassword, newPassword, id], (updateErr) => {
-        if (updateErr) {
-          return res.status(500).json({ message: "Password update failed", error: updateErr });
+      db.query(
+        updateQuery,
+        [hashedNewPassword, newPassword, id],
+        (updateErr) => {
+          if (updateErr) {
+            return res
+              .status(500)
+              .json({ message: "Password update failed", error: updateErr });
+          }
+
+          // ✅ Send email after successful password update
+          AdminchangePassword(user.email, user.full_name, newPassword);
+
+          return res
+            .status(200)
+            .json({ message: "Password changed successfully", status: 1 });
         }
-
-        // ✅ Send email after successful password update
-        AdminchangePassword(user.email, user.full_name, newPassword);
-
-        return res.status(200).json({ message: "Password changed successfully", status: 1 });
-      });
+      );
     });
   } catch (error) {
     console.error("Error changing password:", error);
@@ -331,9 +332,6 @@ Communitysponsor.org Team
   });
 }
 
-
-
-
 function resetpassword(to, newPassword) {
   const subject = `Reset Password Mail From Communitysponsor.org - Your Login Details`;
 
@@ -367,7 +365,6 @@ Communitysponsor.org Team
     else console.log("Reset Password Mail:", info.response);
   });
 }
-
 
 exports.proposalData = async (req, res) => {
   const data = req.body;
@@ -458,7 +455,7 @@ exports.proposalData = async (req, res) => {
     status,
     JSON.stringify(images),
     JSON.stringify(video_links),
-      location,
+    location,
     spnotes,
     numfamily,
     highlight,
@@ -476,25 +473,74 @@ exports.proposalData = async (req, res) => {
       return res.status(500).json({ message: "Insert failed", error: err });
     }
 
- const getEmailsQuery = `
-  SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
-  FROM \`register\`
-  WHERE \`current_role\` LIKE '%business_sponsor%'
-`;
+    const proposalId = result.insertId;
 
-db.query(getEmailsQuery, (err, emailResult) => {
-  if (err) {
-    console.error("Error fetching sponsor emails:", err);
-    return res.status(500).json({ message: "Error fetching sponsor emails" });
-  }
-  const sponsorEmails = emailResult[0]?.sponsorEmails || null;
-  console.log(created_by);
-   sendEmailTosponsors(
-    sponsorEmails, title, created_by,
-   )
+    // NOTIFICATION SYSTEM ADDED HERE
+    // Get all sponsors for notifications
+    const getSponsorsQuery = `
+      SELECT id FROM register
+      WHERE JSON_CONTAINS(roles, '["business_sponsor"]')
+    `;
 
-});
-  
+    db.query(getSponsorsQuery, (err, sponsorsResult) => {
+      if (err) {
+        console.error("Error fetching sponsors:", err);
+      } else {
+        // Create notifications for all sponsors
+        const sponsors = sponsorsResult;
+
+        sponsors.forEach((sponsor) => {
+          const notificationQuery = `
+            INSERT INTO allnotifications SET ?
+          `;
+
+          const notificationData = {
+            user_id: sponsor.id,
+            title: "New Sponsorship Opportunity! 🎯",
+            message: `A new proposal "${title}" has been created by ${created_by}. Check it out now!`,
+            type: "new_proposal",
+            related_id: proposalId,
+            related_type: "proposal",
+            created_at: new Date(),
+          };
+
+          db.query(notificationQuery, notificationData, (notifErr) => {
+            if (notifErr) {
+              console.error("Error creating notification:", notifErr);
+            }
+          });
+        });
+
+        // Emit real-time notification via socket.io
+        if (global.io) {
+          global.io.emit("new_proposal_notification", {
+            proposalId: proposalId,
+            title: title,
+            createdBy: created_by,
+            message: `New proposal "${title}" created by ${created_by}`,
+          });
+        }
+      }
+    });
+
+    // EXISTING EMAIL CODE - UNCHANGED
+    const getEmailsQuery = `
+      SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
+      FROM \`register\`
+      WHERE \`current_role\` LIKE '%business_sponsor%'
+    `;
+
+    db.query(getEmailsQuery, (err, emailResult) => {
+      if (err) {
+        console.error("Error fetching sponsor emails:", err);
+        return res
+          .status(500)
+          .json({ message: "Error fetching sponsor emails" });
+      }
+      const sponsorEmails = emailResult[0]?.sponsorEmails || null;
+      console.log(created_by);
+      sendEmailTosponsors(sponsorEmails, title, created_by);
+    });
 
     return res.status(201).json({
       message: "Proposal inserted successfully",
@@ -503,16 +549,11 @@ db.query(getEmailsQuery, (err, emailResult) => {
   });
 };
 
-
 //Email For All Sponsores
-function sendEmailTosponsors(
-  to,
-  proposalTitle,
-  hostEmail
-) {
+function sendEmailTosponsors(to, proposalTitle, hostEmail) {
   const subject = `🎉 A New Event Proposal Published!`;
 
-  const body  = `
+  const body = `
 <html>
   <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
     <h2 style="color: #2b6cb0;">🎉 A New Event Proposal Published!</h2>
@@ -524,7 +565,7 @@ function sendEmailTosponsors(
       <a href="mailto:${hostEmail}" style="color: #1a73e8;">${hostEmail}</a>
     </p>
     <p>
-      <strong>Published by:</strong> ${created_by}
+      <strong>Published by:</strong> ${hostEmail}
     </p>
     <br>
     <p>Best regards,<br>
@@ -537,7 +578,7 @@ function sendEmailTosponsors(
     from: "Communitysponsor.org <avinayquicktech@gmail.com>",
     to,
     subject,
-    text: body,
+    html: body,
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
@@ -549,9 +590,8 @@ function sendEmailTosponsors(
   });
 }
 
-
 //Email For All Sponsores
- function sendEmailToEditsponsors(to, proposalTitle, hostEmail, proposalId) {
+function sendEmailToEditsponsors(to, proposalTitle, hostEmail, proposalId) {
   const subject = `🎉 An Event Proposal Has Been Edited!`;
 
   const htmlBody = `
@@ -592,7 +632,6 @@ function sendEmailTosponsors(
     }
   });
 }
-
 
 function sendEmailToEditsponsorsbyadmin(to, proposalTitle, proposalId) {
   const subject = `🎉 An Event Proposal Has Been Edited!`;
@@ -636,16 +675,16 @@ function sendEmailToEditsponsorsbyadmin(to, proposalTitle, proposalId) {
   });
 }
 
-
-
- exports.geteventforadmin = async (req, res) => {
+exports.geteventforadmin = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [rows] = await db.promise().query(
-      "SELECT created_by_id FROM sponsorshipproposal_export WHERE id = ?",
-      [id]
-    );
+    const [rows] = await db
+      .promise()
+      .query(
+        "SELECT created_by_id FROM sponsorshipproposal_export WHERE id = ?",
+        [id]
+      );
 
     if (rows.length === 0) {
       return res.status(404).json({ error: "Not found" });
@@ -657,8 +696,6 @@ function sendEmailToEditsponsorsbyadmin(to, proposalTitle, proposalId) {
     res.status(500).json({ error: "Server error" });
   }
 };
-
-
 
 exports.hostpurchase = async (req, res) => {
   const {
@@ -715,9 +752,6 @@ exports.hostpurchase = async (req, res) => {
     });
   });
 };
- 
-
- 
 
 exports.getSponsorshipProposal = async (req, res) => {
   var data = req.body;
@@ -775,31 +809,33 @@ exports.archiveSponsorshipProposal = async (req, res) => {
     WHERE id = ?
   `;
 
-  db.query(query, [data.status || "archived", data.proposal_id, data.created_by], (err, results) => {
-    if (err) {
-      console.error("Database error:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Database query error",
-        error: err,
+  db.query(
+    query,
+    [data.status || "archived", data.proposal_id, data.created_by],
+    (err, results) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Database query error",
+          error: err,
+        });
+      }
+
+      if (results.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Proposal not found or not owned by this user",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Proposal archived successfully",
       });
     }
-
-    if (results.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Proposal not found or not owned by this user",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Proposal archived successfully",
-    });
-  });
+  );
 };
-
-
 
 exports.deleteSponsorshipProposal = async (req, res) => {
   const data = req.body;
@@ -840,8 +876,6 @@ exports.deleteSponsorshipProposal = async (req, res) => {
     });
   });
 };
-
-
 
 exports.registerwithgoogle = async (req, res) => {
   const {
@@ -1137,7 +1171,6 @@ exports.login = async (req, res) => {
   }
 };
 
-
 // Get Host Notifications
 exports.getnotifications = async (req, res) => {
   const { user_id } = req.body;
@@ -1149,7 +1182,7 @@ exports.getnotifications = async (req, res) => {
   }
 
   const query = `SELECT * FROM notifications WHERE user_id = ? AND user_type = 'event_host';`;
- 
+
   db.query(query, [user_id], (err, results) => {
     if (err) {
       return res.status(500).json({
@@ -1165,10 +1198,9 @@ exports.getnotifications = async (req, res) => {
   });
 };
 
-
 exports.checkUser = async (req, res) => {
   const { email, userType } = req.body;
- 
+
   if (!email || !userType) {
     return res
       .status(400)
@@ -1177,7 +1209,7 @@ exports.checkUser = async (req, res) => {
 
   try {
     // 🟢 Check if user exists in the database
- 
+
     db.query(
       "SELECT * FROM register WHERE email = ? AND `current_role` = ?",
       [email, userType],
@@ -1189,41 +1221,40 @@ exports.checkUser = async (req, res) => {
             .json({ message: "Database query error", exists: false });
         }
         console.log(rows);
-       if (rows.length > 0) {
-  const plainPassword = crypto
-    .randomBytes(6)
-    .toString("base64")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 10);
+        if (rows.length > 0) {
+          const plainPassword = crypto
+            .randomBytes(6)
+            .toString("base64")
+            .replace(/[^a-zA-Z0-9]/g, "")
+            .slice(0, 10);
 
-  bcrypt.hash(plainPassword, 10, (err, hashedPassword) => {
-    if (err) {
-      console.error("Hash error:", err);
-      return res.status(500).json({ message: "Server error" });
-    }
+          bcrypt.hash(plainPassword, 10, (err, hashedPassword) => {
+            if (err) {
+              console.error("Hash error:", err);
+              return res.status(500).json({ message: "Server error" });
+            }
 
-    db.query(
-      "UPDATE register SET viewpassword = ?, password = ? WHERE email = ? AND `current_role` = ?",
-      [plainPassword, hashedPassword, email, userType],
-      (error, result) => {
-        if (error) {
-          console.error("DB update error:", error);
-          return res.status(500).json({ message: "Server error" });
-        }
+            db.query(
+              "UPDATE register SET viewpassword = ?, password = ? WHERE email = ? AND `current_role` = ?",
+              [plainPassword, hashedPassword, email, userType],
+              (error, result) => {
+                if (error) {
+                  console.error("DB update error:", error);
+                  return res.status(500).json({ message: "Server error" });
+                }
 
-        return res.status(200).json({
-          message: "Password reset successful. Please check your email.",
-          exists: true,
-          user: rows[0],
-        });
-      }
-    );
+                return res.status(200).json({
+                  message:
+                    "Password reset successful. Please check your email.",
+                  exists: true,
+                  user: rows[0],
+                });
+              }
+            );
 
-    resetpassword(email, plainPassword);
-  });
-}
-
- else {
+            resetpassword(email, plainPassword);
+          });
+        } else {
           return res
             .status(404)
             .json({ message: "User not found", exists: false });
@@ -1238,7 +1269,6 @@ exports.checkUser = async (req, res) => {
     });
   }
 };
-
 
 exports.emailBlast = async (req, res) => {
   const {
@@ -1501,7 +1531,7 @@ exports.uploadimageVideo = (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const fileUrl = `http://localhost:5000/uploads/proposals/${req.file.filename}`;
+    const fileUrl = `https://communitysponsor.org/backend/uploads/proposals/${req.file.filename}`;
     res.status(200).json({ file_url: fileUrl });
   });
 };
@@ -1663,8 +1693,20 @@ exports.sponsorPaymentCharge = async (req, res) => {
 };
 
 exports.sponsorPaymentSave = (req, res) => {
-  const { confirmResult, proposal_id, host_id, amount, platformpercent, selectedTiers, user_id, ptitle, sponsoremail, sponsorfullname, host_email } = req.body;
- const selectedTiersJson = JSON.stringify(selectedTiers);
+  const {
+    confirmResult,
+    proposal_id,
+    host_id,
+    amount,
+    platformpercent,
+    selectedTiers,
+    user_id,
+    ptitle,
+    sponsoremail,
+    sponsorfullname,
+    host_email,
+  } = req.body;
+  const selectedTiersJson = JSON.stringify(selectedTiers);
   if (!confirmResult?.id || !user_id) {
     return res
       .status(400)
@@ -1701,42 +1743,50 @@ exports.sponsorPaymentSave = (req, res) => {
     }
 
     // Update is_funded in sponsorshipproposal_export table
-  const updateSql = `
+    const updateSql = `
   UPDATE sponsorshipproposal_export
   SET is_funded = 1
   WHERE id = ?
 `;
 
-db.query(updateSql, [proposal_id], (updateErr, updateResult) => {
-  if (updateErr) {
-  console.error("Update error:", updateErr);
-  return res
-      .status(500)
-      .json({ status: "3", message: "Update failed", error: updateErr });
-  }
- sendEmailToHostProposalsold(
-  host_email,
-  ptitle,
-  sponsorfullname,
-  sponsoremail
-)
-  return res.status(200).json({
+    db.query(updateSql, [proposal_id], (updateErr, updateResult) => {
+      if (updateErr) {
+        console.error("Update error:", updateErr);
+        return res
+          .status(500)
+          .json({ status: "3", message: "Update failed", error: updateErr });
+      }
+      sendEmailToHostProposalsold(
+        host_email,
+        ptitle,
+        sponsorfullname,
+        sponsoremail
+      );
+      return res.status(200).json({
         status: "1",
-        message: "Subscription saved, proposal marked as funded, and notification sent."
-   });
-
- 
-});
-
+        message:
+          "Subscription saved, proposal marked as funded, and notification sent.",
+      });
+    });
   });
 };
 
- 
-
 exports.sponsorPaymentSavePaypal = (req, res) => {
-  const { confirmResult, proposal_id, host_id, amount, user_id,platformpercent,selectedTiers, ptitle, sponsoremail, sponsorfullname, host_email } = req.body;
+  const {
+    confirmResult,
+    proposal_id,
+    host_id,
+    amount,
+    user_id,
+    platformpercent,
+    selectedTiers,
+    ptitle,
+    sponsoremail,
+    sponsorfullname,
+    host_email,
+  } = req.body;
   const selectedTiersJson = JSON.stringify(selectedTiers);
- 
+
   if (!confirmResult?.id || !user_id) {
     return res
       .status(400)
@@ -1757,11 +1807,11 @@ exports.sponsorPaymentSavePaypal = (req, res) => {
     selectedTiersJson,
     user_id,
     confirmResult.id,
-    'succeeded',
+    "succeeded",
     "paypal",
     "usd",
     amount,
-    platformpercent
+    platformpercent,
   ];
 
   db.query(insertSql, insertValues, (err, result) => {
@@ -1787,11 +1837,11 @@ exports.sponsorPaymentSavePaypal = (req, res) => {
       }
 
       sendEmailToHostProposalsold(
-  host_email,
-  ptitle,
-  sponsorfullname,
-  sponsoremail
-)
+        host_email,
+        ptitle,
+        sponsorfullname,
+        sponsoremail
+      );
 
       return res.status(200).json({
         status: "1",
@@ -2243,7 +2293,7 @@ exports.getproposalDetailEdit = async (req, res) => {
 
 exports.adminproposalDataEdit = async (req, res) => {
   const data = req.body;
-   
+
   const {
     id,
     event_type,
@@ -2269,7 +2319,7 @@ exports.adminproposalDataEdit = async (req, res) => {
     spnotes,
     numfamily,
     highlight,
-   deadline,
+    deadline,
     ticketsOnSale,
     ticketPrice,
     created_by_id,
@@ -2360,15 +2410,15 @@ exports.adminproposalDataEdit = async (req, res) => {
   }
 
   function formatDateToMySQL(date) {
-  if (!date) return null;
+    if (!date) return null;
 
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
-  const day = String(d.getDate()).padStart(2, "0");
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
+    const day = String(d.getDate()).padStart(2, "0");
 
-  return `${year}-${month}-${day}`; // "YYYY-MM-DD"
-}
+    return `${year}-${month}-${day}`; // "YYYY-MM-DD"
+  }
 
   const values = [
     event_type,
@@ -2407,26 +2457,23 @@ exports.adminproposalDataEdit = async (req, res) => {
       return res.status(500).json({ message: "Update failed", error: err });
     }
 
-  
-const getEmailsQuery = `
+    const getEmailsQuery = `
   SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
   FROM \`register\`
   WHERE \`current_role\` LIKE '%business_sponsor%'
 `;
 
-db.query(getEmailsQuery, (err, emailResult) => {
-  if (err) {
-    console.error("Error fetching sponsor emails:", err);
-    return res.status(500).json({ message: "Error fetching sponsor emails" });
-  }
-  const sponsorEmails = emailResult[0]?.sponsorEmails || null;
-  
-   sendEmailToEditsponsorsbyadmin(
-    sponsorEmails, title,id
-   )
+    db.query(getEmailsQuery, (err, emailResult) => {
+      if (err) {
+        console.error("Error fetching sponsor emails:", err);
+        return res
+          .status(500)
+          .json({ message: "Error fetching sponsor emails" });
+      }
+      const sponsorEmails = emailResult[0]?.sponsorEmails || null;
 
-});
-  
+      sendEmailToEditsponsorsbyadmin(sponsorEmails, title, id);
+    });
 
     return res.status(200).json({
       message: "Proposal updated successfully",
@@ -2434,8 +2481,6 @@ db.query(getEmailsQuery, (err, emailResult) => {
     });
   });
 };
-
-
 
 exports.proposalDataEdit = async (req, res) => {
   const data = req.body;
@@ -2464,7 +2509,7 @@ exports.proposalDataEdit = async (req, res) => {
     spnotes,
     numfamily,
     highlight,
-   deadline,
+    deadline,
     ticketsOnSale,
     ticketPrice,
     created_by,
@@ -2557,15 +2602,15 @@ exports.proposalDataEdit = async (req, res) => {
   }
 
   function formatDateToMySQL(date) {
-  if (!date) return null;
+    if (!date) return null;
 
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
-  const day = String(d.getDate()).padStart(2, "0");
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0"); // Months are 0-based
+    const day = String(d.getDate()).padStart(2, "0");
 
-  return `${year}-${month}-${day}`; // "YYYY-MM-DD"
-}
+    return `${year}-${month}-${day}`; // "YYYY-MM-DD"
+  }
 
   const values = [
     event_type,
@@ -2605,26 +2650,23 @@ exports.proposalDataEdit = async (req, res) => {
       return res.status(500).json({ message: "Update failed", error: err });
     }
 
-  
-const getEmailsQuery = `
+    const getEmailsQuery = `
   SELECT GROUP_CONCAT(email SEPARATOR ', ') AS sponsorEmails
   FROM \`register\`
   WHERE \`current_role\` LIKE '%business_sponsor%'
 `;
 
-db.query(getEmailsQuery, (err, emailResult) => {
-  if (err) {
-    console.error("Error fetching sponsor emails:", err);
-    return res.status(500).json({ message: "Error fetching sponsor emails" });
-  }
-  const sponsorEmails = emailResult[0]?.sponsorEmails || null;
-  console.log(created_by , id );
-   sendEmailToEditsponsors(
-    sponsorEmails, title, created_by,id
-   )
-
-});
-  
+    db.query(getEmailsQuery, (err, emailResult) => {
+      if (err) {
+        console.error("Error fetching sponsor emails:", err);
+        return res
+          .status(500)
+          .json({ message: "Error fetching sponsor emails" });
+      }
+      const sponsorEmails = emailResult[0]?.sponsorEmails || null;
+      console.log(created_by, id);
+      sendEmailToEditsponsors(sponsorEmails, title, created_by, id);
+    });
 
     return res.status(200).json({
       message: "Proposal updated successfully",
@@ -2632,7 +2674,6 @@ db.query(getEmailsQuery, (err, emailResult) => {
     });
   });
 };
-
 
 // controller/sponsorController.js
 
@@ -2706,15 +2747,19 @@ exports.getuser = async (req, res) => {
   });
 };
 
-
-  exports.updatesponserPayout = async (req, res) => {
+exports.updatesponserPayout = async (req, res) => {
   try {
     const { id, paypal_email } = req.body;
 
     // 1️⃣ Validate input
-    if (typeof id !== "number" || !paypal_email || typeof paypal_email !== "string") {
+    if (
+      typeof id !== "number" ||
+      !paypal_email ||
+      typeof paypal_email !== "string"
+    ) {
       return res.status(400).json({
-        message: "Invalid input: 'id' must be a number and 'paypal_email' must be a string",
+        message:
+          "Invalid input: 'id' must be a number and 'paypal_email' must be a string",
       });
     }
 
@@ -2723,7 +2768,9 @@ exports.getuser = async (req, res) => {
     db.query(checkQuery, [id], (checkErr, checkResult) => {
       if (checkErr) {
         console.error("DB check error:", checkErr);
-        return res.status(500).json({ message: "Database error", error: checkErr });
+        return res
+          .status(500)
+          .json({ message: "Database error", error: checkErr });
       }
 
       if (checkResult.length === 0) {
@@ -2737,13 +2784,17 @@ exports.getuser = async (req, res) => {
       db.query(updateQuery, [paypal_email, id], (updateErr, updateResult) => {
         if (updateErr) {
           console.error("DB update error:", updateErr);
-          return res.status(500).json({ message: "Database update error", error: updateErr });
+          return res
+            .status(500)
+            .json({ message: "Database update error", error: updateErr });
         }
 
         console.log("Update result:", updateResult);
 
         if (updateResult.affectedRows === 0) {
-          return res.status(500).json({ message: "Update failed: no rows affected" });
+          return res
+            .status(500)
+            .json({ message: "Update failed: no rows affected" });
         }
 
         // 4️⃣ Success
@@ -2757,6 +2808,483 @@ exports.getuser = async (req, res) => {
     });
   } catch (err) {
     console.error("Unexpected error:", err);
-    return res.status(500).json({ message: "Unexpected server error", error: err });
+    return res
+      .status(500)
+      .json({ message: "Unexpected server error", error: err });
+  }
+};
+exports.edituserdata = async (req, res) => {
+  try {
+    const {
+      stripe_account_id,
+      userId,
+      full_name,
+      email,
+      company_name,
+      phone,
+      website,
+      location,
+      industry,
+      bio,
+    } = req.body;
+
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    // Check if email is being updated and if it already exists in other accounts
+    if (email !== undefined) {
+      const emailCheckQuery = `SELECT id FROM register WHERE email = ? AND id != ?`;
+
+      console.log("Checking email:", email, "for user ID:", userId); // Debug log
+
+      db.query(emailCheckQuery, [email, userId], (emailErr, emailResult) => {
+        if (emailErr) {
+          console.error("Database error in email check:", emailErr);
+          return res.status(500).json({
+            success: false,
+            message: "Database query error",
+            error: emailErr.message,
+          });
+        }
+
+        console.log("Email check result:", emailResult); // Debug log
+
+        // If email exists in another account
+        if (emailResult.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Email already exists in another account",
+          });
+        }
+
+        // If email is available, proceed with update
+        proceedWithUpdate();
+      });
+    } else {
+      // If email is not being updated, proceed directly
+      proceedWithUpdate();
+    }
+
+    function proceedWithUpdate() {
+      // Build update query dynamically based on provided fields
+      let updateFields = [];
+      let values = [];
+
+      if (full_name !== undefined) {
+        updateFields.push("full_name = ?");
+        values.push(full_name);
+      }
+      if (email !== undefined) {
+        updateFields.push("email = ?");
+        values.push(email);
+      }
+      if (company_name !== undefined) {
+        updateFields.push("company_name = ?");
+        values.push(company_name);
+      }
+      if (phone !== undefined) {
+        updateFields.push("phone = ?");
+        values.push(phone);
+      }
+      if (website !== undefined) {
+        updateFields.push("website = ?");
+        values.push(website);
+      }
+      if (location !== undefined) {
+        updateFields.push("location = ?");
+        values.push(location);
+      }
+      if (industry !== undefined) {
+        updateFields.push("industry = ?");
+        values.push(industry);
+      }
+      if (bio !== undefined) {
+        updateFields.push("bio = ?");
+        values.push(bio);
+      }
+
+      if (stripe_account_id !== undefined) {
+        updateFields.push("stripe_account_id = ?");
+        values.push(stripe_account_id);
+      }
+
+      if (updateFields.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No fields to update",
+        });
+      }
+
+      values.push(userId);
+
+      const query = `UPDATE register SET ${updateFields.join(", ")} WHERE id = ?`;
+
+      db.query(query, values, (err, result) => {
+        if (err) {
+          console.error("Database error:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Database query error",
+            error: err.message,
+          });
+        }
+
+        if (result.affectedRows === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found",
+          });
+        }
+
+        res.json({
+          success: true,
+          message: "User updated successfully",
+          affectedRows: result.affectedRows,
+        });
+      });
+    }
+  } catch (error) {
+    console.error("Error in edituserdata:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+exports.getHistorydetail = async (req, res) => {
+  var userid = req.body.user;
+
+  const checkQuery = `SELECT * from register where id = ?`;
+  db.query(checkQuery, [userid.id], (checkErr, checkResult) => {
+    if (checkErr) {
+      console.error("DB check error:", checkErr);
+      return res
+        .status(500)
+        .json({ message: "Database error", error: checkErr });
+    }
+
+    if (checkResult.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const user = checkResult[0];
+    let roles = [];
+
+    try {
+      // Parse the roles JSON string
+      if (user.roles) {
+        roles = JSON.parse(user.roles);
+      }
+    } catch (parseErr) {
+      console.error("Error parsing roles:", parseErr);
+      roles = [];
+    }
+
+    // Add current_role to roles if it exists
+    if (user.current_role && !roles.includes(user.current_role)) {
+      roles.push(user.current_role);
+    }
+
+    const paymentPromises = [];
+    const results = {
+      user: user,
+      payments: {
+        host_payments: [],
+        sponsorship_payments: [],
+      },
+    };
+
+    // Check if user has event_host role
+    if (roles.includes("event_host") || user.current_role === "event_host") {
+      const hostPaymentsQuery = `SELECT * FROM host_payments WHERE host_id = ? ORDER BY id DESC`;
+      paymentPromises.push(
+        new Promise((resolve, reject) => {
+          db.query(hostPaymentsQuery, [userid.id], (err, hostResults) => {
+            if (err) {
+              console.error("Error fetching host payments:", err);
+              reject(err);
+            } else {
+              results.payments.host_payments = hostResults;
+              resolve();
+            }
+          });
+        })
+      );
+    }
+
+    // Check if user has business_sponsor role
+    if (
+      roles.includes("business_sponsor") ||
+      user.current_role === "business_sponsor"
+    ) {
+      const sponsorshipPaymentsQuery = `SELECT * FROM sponsorship_payments WHERE sponsor_id = ? ORDER BY id DESC`;
+      paymentPromises.push(
+        new Promise((resolve, reject) => {
+          db.query(
+            sponsorshipPaymentsQuery,
+            [userid.id],
+            (err, sponsorResults) => {
+              if (err) {
+                console.error("Error fetching sponsorship payments:", err);
+                reject(err);
+              } else {
+                results.payments.sponsorship_payments = sponsorResults;
+                resolve();
+              }
+            }
+          );
+        })
+      );
+    }
+
+    // If no specific roles found, check both tables by user ID
+    if (paymentPromises.length === 0) {
+      const hostPaymentsQuery = `SELECT * FROM host_payments WHERE host_id = ? ORDER BY id DESC`;
+      const sponsorshipPaymentsQuery = `SELECT * FROM sponsorship_payments WHERE sponsor_id = ? ORDER BY id DESC`;
+
+      paymentPromises.push(
+        new Promise((resolve, reject) => {
+          db.query(hostPaymentsQuery, [userid.id], (err, hostResults) => {
+            if (err) {
+              console.error("Error fetching host payments:", err);
+              reject(err);
+            } else {
+              results.payments.host_payments = hostResults;
+              resolve();
+            }
+          });
+        })
+      );
+
+      paymentPromises.push(
+        new Promise((resolve, reject) => {
+          db.query(
+            sponsorshipPaymentsQuery,
+            [userid.id],
+            (err, sponsorResults) => {
+              if (err) {
+                console.error("Error fetching sponsorship payments:", err);
+                reject(err);
+              } else {
+                results.payments.sponsorship_payments = sponsorResults;
+                resolve();
+              }
+            }
+          );
+        })
+      );
+    }
+
+    // Execute all queries
+    Promise.all(paymentPromises)
+      .then(() => {
+        res.status(200).json({
+          message: "Payment history retrieved successfully",
+          data: results,
+        });
+      })
+      .catch((error) => {
+        console.error("Error in payment queries:", error);
+        res.status(500).json({
+          message: "Error fetching payment history",
+          error: error,
+        });
+      });
+  });
+};
+
+exports.weeklyaggregate = async (req, res) => {
+  try {
+    // Get proposals that are 7 days old and not funded
+    const proposalQuery = `
+      SELECT * FROM sponsorshipproposal_export 
+      WHERE is_funded = 0 
+     AND created_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      AND created_date < DATE_SUB(NOW(), INTERVAL 6 DAY)
+    `;
+
+    db.query(proposalQuery, async (proposalErr, proposals) => {
+      if (proposalErr) {
+        console.error("Database error fetching proposals:", proposalErr);
+        return res.status(500).json({
+          message: "Database error fetching proposals",
+          error: proposalErr,
+        });
+      }
+
+      if (proposals.length === 0) {
+        return res.status(200).json({
+          message: "No proposals found that are 7 days old and not funded",
+          proposalsCount: 0,
+          emailsSent: 0,
+        });
+      }
+
+      // Get all users with business_sponsor role
+      const sponsorQuery = `
+        SELECT * FROM register 
+        WHERE roles LIKE '%business_sponsor%' 
+        OR current_role = 'business_sponsor'
+        OR roles = 'business_sponsor'
+      `;
+
+      db.query(sponsorQuery, async (sponsorErr, sponsors) => {
+        if (sponsorErr) {
+          console.error("Database error fetching sponsors:", sponsorErr);
+          return res.status(500).json({
+            message: "Database error fetching sponsors",
+            error: sponsorErr,
+          });
+        }
+
+        if (sponsors.length === 0) {
+          return res.status(404).json({
+            message: "No business sponsors found",
+            proposalsCount: proposals.length,
+            emailsSent: 0,
+          });
+        }
+
+        console.log(
+          `Found ${proposals.length} proposals and ${sponsors.length} sponsors`
+        );
+
+        // Send emails to all sponsors about these proposals
+        const emailPromises = sponsors.map((sponsor) => {
+          const mailOptions = {
+            from: `"Community Sponsor" <${process.env.EMAIL_USER}>`,
+            to: sponsor.email,
+            subject: `Weekly Sponsorship Opportunities - ${proposals.length} New Proposals Available`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                  <h1 style="color: #2563eb; margin: 0; font-size: 28px;">CommunitySponsor</h1>
+                  <p style="color: #6b7280; margin: 5px 0 0 0; font-size: 14px;">Weekly Sponsorship Opportunities</p>
+                </div>
+                
+                <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                  <h2 style="color: #1f2937; margin-top: 0; font-size: 24px;">New Sponsorship Opportunities Available!</h2>
+                  
+                  <p style="color: #374151; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+                    Hello ${sponsor.full_name || "Sponsor"},
+                  </p>
+                  
+                  <p style="color: #374151; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+                    We have <strong>${proposals.length}</strong> new sponsorship proposals that need funding. 
+                    These proposals were created last week and are looking for sponsors like you!
+                  </p>
+
+                  <div style="background: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0;">
+                    <h3 style="color: #1f2937; margin-top: 0; margin-bottom: 15px;">Featured Proposals:</h3>
+                    ${proposals
+                      .slice(0, 5)
+                      .map(
+                        (proposal, index) => `
+                      <div style="border-bottom: 1px solid #e5e7eb; padding: 10px 0; ${index === proposals.slice(0, 5).length - 1 ? "border-bottom: none;" : ""}">
+                        <h4 style="color: #2563eb; margin: 0 0 5px 0; font-size: 16px;">${proposal.title || "Untitled Proposal"}</h4>
+                        <p style="color: #6b7280; margin: 0; font-size: 14px;">
+                          ${proposal.event_type || "Event"} • 
+                          ${proposal.location || "Location not specified"} • 
+                          Requested: ${proposal.amount_requested || "N/A"}
+                        </p>
+                        ${proposal.description ? `<p style="color: #374151; margin: 5px 0 0 0; font-size: 14px;">${proposal.description.substring(0, 100)}...</p>` : ""}
+                      </div>
+                    `
+                      )
+                      .join("")}
+                    
+                    ${
+                      proposals.length > 5
+                        ? `
+                      <p style="color: #6b7280; margin: 15px 0 0 0; font-size: 14px; text-align: center;">
+                        ... and ${proposals.length - 5} more proposals
+                      </p>
+                    `
+                        : ""
+                    }
+                  </div>
+
+                  <div style="text-align: center; margin: 25px 0;">
+                    <a href="https://communitysponsor.org/browseproposals" 
+                       style="background: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                      View All Proposals
+                    </a>
+                  </div>
+
+                  <p style="color: #374151; line-height: 1.6; font-size: 14px;">
+                    Don't miss out on these great opportunities to support your community and get valuable exposure for your business.
+                  </p>
+                </div>
+                
+                <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border-radius: 8px; text-align: center;">
+                  <p style="color: #666; margin: 0 0 10px 0;">
+                    Best regards,<br>
+                    <strong>The CommunitySponsor Team</strong>
+                  </p>
+                </div>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
+                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                    This email was sent to ${sponsor.full_name || sponsor.email} as part of our weekly sponsorship opportunities update.<br>
+                    &copy; ${new Date().getFullYear()} CommunitySponsor.org. All rights reserved.
+                  </p>
+                  <p style="color: #9ca3af; font-size: 12px; margin: 5px 0 0 0;">
+                    <a href="https://communitysponsor.org/unsubscribe" style="color: #3b82f6; text-decoration: none;">Unsubscribe from these notifications</a>
+                  </p>
+                </div>
+              </div>
+            `,
+          };
+
+          return transporter.sendMail(mailOptions);
+        });
+
+        try {
+          await Promise.all(emailPromises);
+
+          // Log this activity
+          const logQuery = `
+            INSERT INTO weekly_aggregate_log 
+            (proposals_count, sponsors_count, sent_date) 
+            VALUES (?, ?, NOW())
+          `;
+
+          db.query(logQuery, [proposals.length, sponsors.length], (logErr) => {
+            if (logErr) {
+              console.error("Error logging weekly aggregate:", logErr);
+            }
+          });
+
+          res.status(200).json({
+            message: `Weekly aggregate email sent successfully to ${sponsors.length} sponsors about ${proposals.length} proposals`,
+            proposalsCount: proposals.length,
+            sponsorsCount: sponsors.length,
+            emailsSent: sponsors.length,
+          });
+        } catch (emailError) {
+          console.error("Error sending emails:", emailError);
+          res.status(500).json({
+            message: "Error sending some emails",
+            error: emailError,
+            proposalsCount: proposals.length,
+            sponsorsCount: sponsors.length,
+            emailsSent: 0,
+          });
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Error in weeklyaggregate:", error);
+    res.status(500).json({
+      message: "Server error",
+      error: error,
+    });
   }
 };

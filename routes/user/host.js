@@ -15,10 +15,15 @@ router.post("/createChatMessage", hostController.createChatMessage);
 
 router.post("/updateChatThread", hostController.updateChatThread);
 router.post("/getUserThreads", hostController.getUserThreads);
+router.post("/getUserThreadsCheck", hostController.getUserThreadsCheck);
 router.post("/userfilter", hostController.userfilter);
 router.post("/sponsorfilter", hostController.sponsorfilter);
 
- 
 router.post("/createstripe", hostController.createstripe);
+
+router.post("/getAll", hostController.getAll);
+router.post("/getAllUnreadCount", hostController.getAllUnreadCount);
+router.post("/markAsReadAll", hostController.markAsReadAll);
+router.post("/getUserrecords", hostController.getUserrecords);
 
 module.exports = router;

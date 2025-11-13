@@ -14,7 +14,6 @@ router.post("/localloadEvents", sponserController.localloadEvents);
 router.post("/proposalData", sponserController.proposalData);
 router.post("/hostpurchase", sponserController.hostpurchase);
 router.post("/sponsorshipproposal/:id", sponserController.geteventforadmin);
- 
 
 router.post(
   "/getSponsorshipProposal",
@@ -33,7 +32,7 @@ router.post(
   sponserController.getsponsorSubscriptiondetail
 );
 
- router.post("/getnotifications", sponserController.getnotifications);
+router.post("/getnotifications", sponserController.getnotifications);
 router.post("/paymentCharge", sponserController.paymentCharge);
 router.post("/paymentSave", sponserController.paymentSave);
 router.post("/sponsorPaymentCharge", sponserController.sponsorPaymentCharge);
@@ -58,23 +57,19 @@ router.post(
 router.post("/getproposalDetailEdit", sponserController.getproposalDetailEdit);
 router.post("/proposalDataEdit", sponserController.proposalDataEdit);
 router.post("/adminproposaldataedit", sponserController.adminproposalDataEdit);
- 
+
 router.post(
   "/getSponsorshipProposalHostpage",
   sponserController.getSponsorshipProposalHostpage
 );
-router.post(
-  "/archiveProposal",
-  sponserController.archiveSponsorshipProposal
-);
+router.post("/archiveProposal", sponserController.archiveSponsorshipProposal);
 
-router.post(
-  "/deleteProposal",
-  sponserController.deleteSponsorshipProposal
-);
+router.post("/deleteProposal", sponserController.deleteSponsorshipProposal);
 
 router.post("/updateSponsorSetup", sponserController.updateSponsorSetup);
 router.post("/getuser", sponserController.getuser);
 router.post("/updatePayout", sponserController.updatesponserPayout);
-
+router.post("/edituserdata", sponserController.edituserdata);
+router.post("/getHistorydetail", sponserController.getHistorydetail);
+router.get("/weeklyaggregate", sponserController.weeklyaggregate);
 module.exports = router;
